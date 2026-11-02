@@ -1,0 +1,311 @@
+@import 'tailwindcss';
+@import '@xterm/xterm/css/xterm.css';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+  语义令牌指向可翻转的原始变量。@theme inline 让工具类直接引用 var(...)，
+  切换 data-theme 时无需重建样式。
+*/
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-panel: var(--surface-panel);
+  --color-card: var(--surface-card);
+  --color-raised: var(--surface-raised);
+  --color-sunken: var(--surface-sunken);
+
+  --color-line: var(--stroke-base);
+  --color-line-strong: var(--stroke-strong);
+
+  --color-ink: var(--text-primary);
+  --color-ink-strong: var(--text-strong);
+  --color-ink-muted: var(--text-muted);
+  --color-ink-faint: var(--text-faint);
+  --color-ink-inverse: var(--text-inverse);
+
+  --color-live: var(--signal-live);
+  --color-warn: var(--signal-warn);
+  --color-fault: var(--signal-fault);
+  --color-idle: var(--signal-idle);
+  --color-accent: var(--signal-accent);
+  --color-accent-soft: var(--signal-accent-soft);
+
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --radius-pill: 999px;
+  --radius-badge: 6px;
+
+  --color-agent-claude: var(--agent-claude-bg);
+  --color-agent-codex: var(--agent-codex-bg);
+  --color-agent-codex-ink: var(--agent-codex-fg);
+  --color-agent-kimi: var(--agent-kimi-bg);
+  --color-agent-icon: var(--agent-icon-bg);
+  /* Claude / Kimi 徽章两套主题都用白字，不随 ink-inverse 翻转 */
+  --color-badge-ink: #ffffff;
+  --color-terminal: var(--terminal-bg);
+
+  --font-display: 'Manrope', 'Segoe UI Variable Display', 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+  --font-mono: 'Cascadia Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei UI', monospace;
+
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.32, 0.72, 0.32, 1);
+}
+
+:root,
+[data-theme='light'] {
+  --canvas: #f6f7fb;
+  --surface-panel: #ffffff;
+  --surface-card: #ffffff;
+  --surface-raised: #eef1f6;
+  --surface-sunken: #f1f3f8;
+
+  --stroke-base: #e3e7ee;
+  --stroke-strong: #cbd2dd;
+
+  --text-primary: #2b3142;
+  --text-strong: #1b1f2e;
+  --text-muted: #4c5265;
+  --text-faint: #5f6678;
+  --text-inverse: #ffffff;
+
+  --signal-live: #15803d;
+  --signal-warn: #92400e;
+  --signal-fault: #b91c1c;
+  --signal-idle: #6b7280;
+  --signal-accent: #2563eb;
+  --signal-accent-soft: #e3ecff;
+
+  --shadow-lift: 0 4px 14px rgb(20 28 48 / 0.07);
+  --shadow-lift-lg: 0 8px 22px rgb(20 28 48 / 0.12);
+  --shadow-raise: 0 12px 28px rgb(20 28 48 / 0.14);
+  --shadow-float: 0 16px 40px rgb(20 28 48 / 0.16);
+
+  --terminal-bg: #ffffff;
+  --scroll-thumb: #c1c8d2;
+
+  /* agent 徽章（UI设计约束 §4.3） */
+  --agent-claude-bg: #b8461f;
+  --agent-codex-bg: #1f2328;
+  --agent-codex-fg: #ffffff;
+  --agent-kimi-bg: #1a4fd6;
+  --agent-icon-bg: #efeeec;
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --canvas: #0f1219;
+  --surface-panel: #151a23;
+  --surface-card: #1b212c;
+  --surface-raised: #232a37;
+  --surface-sunken: #171c26;
+
+  --stroke-base: #2a3240;
+  --stroke-strong: #3a4556;
+
+  --text-primary: #e4e8f0;
+  --text-strong: #f1f4f9;
+  --text-muted: #a3acbc;
+  --text-faint: #9aa4b5;
+  --text-inverse: #0f1219;
+
+  --signal-live: #4ade80;
+  --signal-warn: #fbbf24;
+  --signal-fault: #f87171;
+  --signal-idle: #8a94a6;
+  --signal-accent: #7aa7ff;
+  --signal-accent-soft: #1d2e52;
+
+  --shadow-lift: 0 0 0 transparent;
+  --shadow-lift-lg: 0 0 0 transparent;
+  --shadow-raise: 0 0 0 transparent;
+  --shadow-float: 0 16px 40px rgb(0 0 0 / 0.45);
+
+  --terminal-bg: #0f1419;
+  --scroll-thumb: #303c4d;
+
+  --agent-claude-bg: #b8461f;
+  --agent-codex-bg: #e6edf3;
+  --agent-codex-fg: #1f2328;
+  --agent-kimi-bg: #1a4fd6;
+  --agent-icon-bg: #efeeec;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+  元素级默认样式必须放进 base 层：不分层的规则优先级高于 Tailwind 的 utilities 层，
+  写成 button { color: inherit } 会让按钮上的 text-accent、text-fault 这些工具类全部失效
+*/
+@layer base {
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: default;
+  }
+
+  *:focus-visible {
+    outline: 3px solid var(--signal-accent);
+    outline-offset: 2px;
+  }
+}
+
+/*
+  控件文字一律不折行：空间不够时由外层布局换行、收起或截断（省略号），
+  不能把「重新检测」挤成两行（scripts/verify-layout.cjs 把关）。放在 base 层，工具类仍可覆盖
+*/
+@layer base {
+  button,
+  [role='tab'],
+  [role='radio'],
+  [role='menuitem'],
+  kbd,
+  .rounded-pill {
+    white-space: nowrap;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background-clip: content-box;
+}
+
+/*
+  后台会话的 xterm 容器挂在屏外，而不是 display:none：
+  display:none 时尺寸为 0，fit 失败、重新挂载后要多一轮重排（技术设计 §6.2）
+*/
+.terminal-pool {
+  position: fixed;
+  left: -20000px;
+  top: 0;
+  width: 960px;
+  height: 600px;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.terminal-host {
+  position: absolute;
+  inset: 0;
+  padding: 8px 4px 4px 12px;
+  background: var(--terminal-bg);
+}
+
+.terminal-host .xterm {
+  height: 100%;
+}
+
+.terminal-host .xterm-viewport {
+  background: transparent !important;
+}
+
+/*
+  对话中（会话正在输出）的绿色呼吸灯：方块本身轻微明暗，外面一圈光晕从方块大小扩散到 2.4 倍并淡出。
+  只动 transform / opacity；光晕用伪元素，不改方块尺寸，不挤动周围文字。
+  等待输入、异常退出都是静止的，只有在对话中才动，动起来就说明 agent 正在干活。
+*/
+@keyframes status-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes status-halo {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.status-live {
+  animation: status-breathe 1.6s var(--ease-out) infinite;
+}
+
+.status-live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--signal-live);
+  pointer-events: none;
+  animation: status-halo 1.6s var(--ease-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-live,
+  .status-live::after {
+    animation: none;
+  }
+
+  .status-live::after {
+    opacity: 0;
+  }
+}
+
+/* 自绘标题栏：空白处可拖动窗口，控件区不可（UI设计约束 §3） */
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* 拖动分隔条期间：全局光标保持 resize，禁止选中文字（指针划过终端时不触发选区） */
+html[data-resizing='col'] * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+html[data-resizing='row'] * {
+  cursor: row-resize !important;
+  user-select: none;
+}
+
+/* 控制台画布点阵底纹（UI设计约束 §3）：只铺在格子之间的空白，终端区有自己的实底 */
+.console-dots {
+  background-color: var(--canvas);
+  background-image: radial-gradient(var(--stroke-strong) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/*
+  对话框遮罩（UI设计约束 §4.5）：只压暗，不做 backdrop blur。
+  遮罩下面是持续刷新的 WebGL 终端，blur 要求每一帧都把整窗重新取样模糊，弹窗开着时 GPU 一直在忙（decisions）
+*/
+.dialog-backdrop {
+  background: rgb(15 18 25 / 0.4);
+}
