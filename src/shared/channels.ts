@@ -86,6 +86,9 @@ export const CH = {
   fsEditorAvailable: 'fs:editorAvailable',
   fsWatch: 'fs:watch',
   fsChanged: 'fs:changed',
+  /** 文件预览（目录栏单击文件）：文本按 UTF-8 读，图片转缩放后的 data URL */
+  fsReadText: 'fs:readText',
+  fsReadImage: 'fs:readImage',
 
   /** 自定义 agent（PRD A-03）与布局预设（升级建议 3.1） */
   agentSaveCustom: 'agent:saveCustom',
@@ -108,6 +111,18 @@ export const CH = {
   historyExport: 'history:export',
   historyReveal: 'history:reveal',
   historyResume: 'history:resume',
+
+  /** Skills 管理（Skills管理-PRD）：渲染层只传 agentId + skillName，路径不出主进程 */
+  skillsScan: 'skills:scan',
+  skillsDetail: 'skills:detail',
+  skillsInstallTo: 'skills:installTo',
+  skillsUninstall: 'skills:uninstall',
+  skillsReveal: 'skills:reveal',
+  skillsParseGithubUrl: 'skills:parseGithubUrl',
+  skillsInstallGithub: 'skills:installGithub',
+  /** 主进程弹文件对话框选 zip，渲染层拿不到路径 */
+  skillsPickZip: 'skills:pickZip',
+  skillsInstallZip: 'skills:installZip',
 
   windowMinimize: 'window:minimize',
   windowMaximize: 'window:maximize',

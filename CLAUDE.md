@@ -32,6 +32,9 @@ npx electron scripts/verify-m3-grid.cjs      # 宫格 / 换格 / 后台保活 / 
 npx electron scripts/verify-m4-restore.cjs   # 关闭确认 / 托盘 / 快照 / 一键恢复与续接（编排 3 次启动，约 1 分钟）
 npx electron scripts/verify-m5-settings.cjs  # 设置 / 主题 / 快捷键 / 命令面板 / 终端搜索
 npx electron scripts/verify-upgrade.cjs      # 升级建议各项（迁移 / 活动 / 自定义 agent / 路径 / 预设 / 广播 / 有更新 / 崩溃重载）
+npx electron scripts/verify-preview.cjs      # 目录栏文件预览（IPC 上限与越界 / md sanitizer / 相对图片 / Esc / 切工作区）
+npx electron scripts/verify-skills.cjs       # Skills 管理（扫描 / 详情 / 卸载 / 跨 agent 安装 / 冲突 .bak / 弹窗与搜索）
+node scripts/probe-skills.cjs                # 本机 agent skill 目录探针（只读，M0 定稿目录映射表用）
 npm run verify:all                           # 依次跑全部 harness，日志存 %TEMP%\warp-verify\（M1 需要 PATH 里有 codex）
 npx electron scripts/verify-layout.cjs       # 控件文字不折行、不溢出（多种宽度与格数、各弹窗菜单）
 npx electron scripts/verify-icons.cjs        # 工作区自定义图标（MILE_WARP_TEST_ICON 跳过系统对话框；含配置写失败回滚）
@@ -178,5 +181,26 @@ README.md        面向使用者的说明（功能、快捷键、数据位置、
 - 未做：P3 改名与删除、P4 Codex 写库（等计划 §9 拍板）。
 - 版本号 1.1.0 → 1.2.0（换新图标：玻璃终端窗 + 节点徽章，`resources/icon.svg` 为源文件），`npm run build:win`（Node 22.23）产出 `release/Mile Warp Setup 1.2.0.exe`（约 99MB，未签名），`verify-package.cjs` 8/8。
 - 顺带修的既有问题：`verify-perf` 首屏 JS 超预算 → 渲染层 `assetsInlineLimit: 0`（agent 图标不再内联进主包）+ 标题栏/菜单复用已打包图标，回到 ≈900KB 内；`verify-m5` 的「Ctrl+W 窗口没关」断言改成 `!isDestroyed`（窗口被最小化时 `isVisible` 也是 false）；`verify-upgrade` 广播断言改成去换行再比（窄格里 'Q' 在末列 'Z' 折行，`includes('QZ')` 误判，广播功能本身没问题）；`SessionService.flush` 只在输出含可见文字时刷新 `lastOutputAt`（空闲 TUI 的纯转义重绘不再把会话顶成「对话中」）。`__warpDebug` 排障面：`layout()`（布局快照）、`inputHookActive()` / `hookStats()`（onData 计数、hook 拦截、apply 丢弃/切片记录）、`sessionStore()`。全量 `verify:all` 15/15、563/563。
+
+### 文件预览（2026-11-03，技术设计 §6.4 预览栏）
+
+- 目录栏第三根 rail（右侧）：`previewRailWidth`（280–640，默认 380）+ `previewRailVisible` 持久化到 `window-state.json`；预览目标永不持久化。
+- IPC：`fs:readText`（`{workspaceId, relativePath}` → `{content, truncated, binary, size, mtime}`；>2MB 拒、>1MB 截、前 8KB 含 `\0` 标 binary）+ `fs:readImage`（扩展名白名单 png/jpg/jpeg/gif/webp/bmp/ico、>20MB 拒、最长边 >1600 由 nativeImage 缩放）。路径校验复用 `FileTreeService.locate`（realpath 越界拒绝）。
+- 渲染层：`store/preview.ts`（target / loading / result / error，reqId 挡竞态）；`components/PreviewRail.tsx`（aside + RailResizer + 头部 + 三分支占位）；`components/preview/markdown.ts`（marked + DOMParser 白名单 sanitizer，项目唯一 `dangerouslySetInnerHTML` 用点）；`components/preview/MarkdownView.tsx`（React.lazy 分包 52KB，不进首屏）；`components/previewIcons.tsx`（本地 4 个 Phosphor path，省 6 字重 defs ≈16KB）。
+- 交互：单击文件即预览（目录单击仍 toggle）；Esc 关预览（`dialog[open]` 时让位）；切工作区清空；md 相对图片拼 `dirname(rel)+src` 仍走 `fs:readImage`（越界主进程兜）换 data URL；外链 `a[target=_blank rel=noopener]` 点击拦 `shell.openUrl`；外链 `img` CSP 不放行，换成 `[外链图片 …]` 占位。
+- `npx electron scripts/verify-preview.cjs`（35 项）：IPC 上限/越界、md 渲染、sanitizer 剥 script/onclick/onerror/iframe/非 http(s) href、相对图片换 data URL、Esc 关预览、切工作区清空、栏宽持久化、右键菜单。
+- 首屏 JS 预算 900 → 950 KB：marked 是独立 lazy chunk（52KB）不进首屏；新增 ~30KB 是预览栏本身 + store + 布局字段 + md-body CSS + 4 个图标 path。决策记录 2026-11-03。
+- 修了一处：preload 曾把参数发成 `{workspaceId, path}`，`FileTreeService.locate` 要 `relativePath`，改 preload 适配契约（IPC 主进程直接把 arg 透传给 `locate`）。
+
+### Skills 管理（2026-11-04，按 `docs/Skills管理-PRD.md` M0-M4）
+
+- 目录映射（M0 探针 `scripts/probe-skills.cjs` 本机定稿）：claude `~/.claude/skills`、codex `~/.codex/skills`、全局仓 `~/.agents/skills`（独立一行，trae/qoder 的 skills 是指向它的 symlink）；kimi / pi 无 skill 目录，不列；自定义 agent 不扫。
+- 主进程：`services/SkillsService.ts`（两级扫描对齐 skillkit、无依赖 frontmatter 解析、name 只允许一层且越界拒绝、uninstall / installTo 同名 overwrite 先留 `.bak-<ts>`）；`lib/extractGuard.ts`（zip 逐条目校验 + tar.gz 走系统 bsdtar + 解压后终检）；`lib/githubInstall.ts`（URL 解析矩阵 owner/repo、tree/branch/subpath、git@、短格式；codeload 下载 30s 超时 50MB 上限；harness 用 `MILE_WARP_CODELOAD_OVERRIDE` 指本地 http 假源）。依赖新增 adm-zip（纯 JS）。
+- IPC：`skills:scan / detail / installTo / uninstall / reveal / parseGithubUrl / installGithub / pickZip / installZip`；渲染层只传 agentId + name，zip 路径由主进程对话框选（渲染层拿不到）。
+- 渲染层：`components/SkillsDialog.tsx`（lazy chunk；tab 切「我的 Skill / 安装 Skill」；左栏 agent 筛选带品牌图标（skillkit MIT 图标集，补 `global.svg`/`pi.svg`，pi.png 退役）；同名 skill 跨 agent 徽章对照；详情复用预览栏 markdown 管线，首版禁图）；入口标题栏 + `Ctrl+Shift+S` + 命令面板。
+- `npx electron scripts/verify-skills.cjs`（52 项）：扫描（frontmatter / 中文名 / 两级布局 / 悬空 symlink）、detail 越界 ×3、installTo（skip / overwrite+.bak / 未知目标 / 自身）、卸载、URL 解析 ×7、GitHub 安装（本地假源）、zip 安装、**zip-slip 拒绝**（手写 entryName 含 `../` 的 zip 二进制——adm-zip 打包时会规范化路径，夹具必须手写）、渲染层（弹窗 / 搜索 native setter / 详情 / 安装页 / 目标选择）。
+- 首屏 935KB < 950 预算；SkillsDialog chunk 12.4KB。
+- 未做：P2 的同名对照批量安装、GitHub 来源更新检查、skills.sh 市场、skill 详情图片（首版禁图，P1 再议）。
+- 待人工确认：真实 GitHub 连通性（harness 用本地假源）；真实 agent 是否识别新装的 skill。
 
 更新进度时改本节。

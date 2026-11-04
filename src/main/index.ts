@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, screen, shell, type IpcMainInvokeEvent } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 import { CH } from '@shared/channels'
 import type { HistoryResumeResult, Layout, SessionData } from '@shared/types'
@@ -12,6 +13,9 @@ import { SessionService } from './services/SessionService'
 import { WorkspaceService } from './services/WorkspaceService'
 import { WorkspaceIcons } from './services/WorkspaceIcons'
 import { FileTreeService } from './services/FileTreeService'
+import { FilePreviewService } from './services/FilePreviewService'
+import { SkillsService } from './services/SkillsService'
+import { installFromGithub, installFromZip, parseGithubUrl } from './lib/githubInstall'
 import { GitInfoService } from './services/GitInfoService'
 import { HISTORY_ID_RE, SessionHistoryService } from './services/SessionHistory'
 import { openExternalTerminal } from './platform/win32/terminal'
@@ -209,6 +213,7 @@ app.whenReady().then(() => {
   const icons = new WorkspaceIcons(join(app.getPath('appData'), 'mile-warp'), testIcon)
   const workspaces = new WorkspaceService(config, icons)
   const files = new FileTreeService(config, (id) => sendToRenderer(CH.fsChanged, id))
+  const preview = new FilePreviewService(files)
   const git = new GitInfoService(config)
   const layout = new LayoutStore(join(app.getPath('appData'), 'mile-warp'))
   sessions.setCellResolver((id) => {
@@ -529,6 +534,35 @@ app.whenReady().then(() => {
     return 'reveal'
   })
   handle(CH.fsWatch, (arg) => files.watchDirs(arg))
+  handle(CH.fsReadText, (arg) => preview.readText(arg))
+  handle(CH.fsReadImage, (arg) => preview.readImage(arg))
+
+  const skills = new SkillsService(homedir())
+  handle(CH.skillsScan, () => skills.scan())
+  handle(CH.skillsDetail, (arg) => skills.detail(arg))
+  handle(CH.skillsUninstall, (arg) => skills.uninstall(arg))
+  handle(CH.skillsInstallTo, (arg) => skills.installTo(arg))
+  handle(CH.skillsReveal, (arg) => {
+    const dir = skills.dirOf(arg)
+    shell.showItemInFolder(join(dir, 'SKILL.md'))
+    return 'reveal'
+  })
+  handle(CH.skillsParseGithubUrl, (arg) => {
+    const r = arg && typeof arg === 'object' ? (arg as Record<string, unknown>) : {}
+    return parseGithubUrl(r.url)
+  })
+  handle(CH.skillsInstallGithub, (arg) => installFromGithub(arg))
+  handle(CH.skillsPickZip, async () => {
+    if (!mainWindow) return null
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: '选择 skill 压缩包',
+      filters: [{ name: 'Skill 压缩包', extensions: ['zip'] }],
+      properties: ['openFile']
+    })
+    if (r.canceled || r.filePaths.length === 0) return null
+    return r.filePaths[0]
+  })
+  handle(CH.skillsInstallZip, (arg) => installFromZip(arg))
 
   handle(CH.agentSaveCustom, (arg) => {
     const next = workspaces.saveCustomAgent(arg)

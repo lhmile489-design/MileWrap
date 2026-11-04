@@ -127,6 +127,7 @@ function buildItems(): Item[] {
   const n = useRestore.getState().candidates.length
   if (n > 0) act('restore', `恢复上次的 ${n} 个会话…`, 'restore resume huifu', () => useRestore.getState().setDialogOpen(true))
   act('history', '会话历史…', 'history lishi huihua ctrl+shift+h', () => ui.openHistory())
+  act('skills', 'Skills 管理…', 'skills jineng bauctrl+shift+s', () => ui.openSkills())
   act('settings', '打开设置', 'settings preferences ctrl+,', () => ui.openSettings())
   act('shortcuts', '快捷键速查', 'shortcuts keys ctrl+/ kuaijiejian', () => ui.setShortcutsOpen(true))
   act('broadcast', ui.broadcast ? '关闭广播输入' : '开启广播输入…', 'broadcast guangbo', () => void toggleBroadcast())

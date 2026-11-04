@@ -4,6 +4,8 @@ import type { FileEntry } from '@shared/types'
 import { useBranches } from '../store/branches'
 import { useConfig } from '../store/config'
 import { EMPTY_TREE, joinRel, useFileTree } from '../store/fileTree'
+import { usePreview } from '../store/preview'
+import { PreviewEye } from './previewIcons'
 import { LAYOUT_LIMITS } from '@shared/types'
 import { CELL_COUNT, railsOf, useLayout } from '../store/layout'
 import { useSessions } from '../store/sessions'
@@ -224,6 +226,8 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
   const selected = useFileTree((s) => (s.trees[workspaceId]?.selected ?? null) === rel)
   // 键盘焦点所在节点：选中的节点，没有就是根
   const focusable = useFileTree((s) => (s.trees[workspaceId]?.selected ?? '') === rel)
+  // 正在预览的文件：左侧强调线 + Eye（不只靠颜色，UI设计约束 §6）
+  const previewing = usePreview((s) => s.target !== null && s.target.workspaceId === workspaceId && s.target.rel === rel)
   const root = rel === ''
   const Icon = fileIcon(name, kind, open, link)
   const dimmed = isDimmed(name)
@@ -242,6 +246,7 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
         onClick={() => {
           select(workspaceId, rel)
           if (isDir) toggle(workspaceId, rel)
+          else if (!link) usePreview.getState().open({ workspaceId, rel, name })
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -249,6 +254,7 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
             e.stopPropagation()
             select(workspaceId, rel)
             if (isDir) toggle(workspaceId, rel)
+            else if (!link) usePreview.getState().open({ workspaceId, rel, name })
           }
         }}
         draggable={!root}
@@ -260,7 +266,7 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
         style={{ '--depth': depth } as React.CSSProperties}
         className={`flex h-7 items-center gap-1 rounded-control pr-2 pl-[calc(4px+var(--depth)*14px)] outline-none transition-colors duration-150 focus-visible:outline-3 focus-visible:outline-offset-[-3px] focus-visible:outline-accent ${
           selected ? 'bg-accent-soft text-ink-strong' : root ? 'bg-raised text-ink-strong hover:bg-raised' : 'text-ink hover:bg-raised'
-        }`}
+        } ${previewing ? 'shadow-[inset_2px_0_0_0_var(--color-accent)]' : ''}`}
       >
         {isDir ? (
           <CaretRight size={16} aria-hidden="true" className={`shrink-0 text-ink-faint transition-transform duration-200 ease-spring ${open ? 'rotate-90' : ''}`} />
@@ -269,6 +275,7 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
         )}
         <Icon size={16} aria-hidden="true" className={`shrink-0 ${dimmed || link ? 'text-ink-faint' : 'text-ink-muted'}`} />
         <span className={`truncate text-[13px] ${root ? 'font-semibold' : ''} ${dimmed || link ? 'text-ink-faint' : ''}`}>{name}</span>
+        {previewing && <PreviewEye size={16} aria-hidden="true" className="ml-auto shrink-0 text-accent" />}
       </div>
       {open && <Children workspaceId={workspaceId} rel={rel} depth={depth + 1} />}
     </div>

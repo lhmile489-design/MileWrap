@@ -36,6 +36,8 @@ export class LayoutStore {
     if (r.fileRailWidth !== undefined) next.fileRailWidth = int(r.fileRailWidth, LAYOUT_LIMITS.fileRail)
     if (r.sessionRailCollapsed !== undefined) next.sessionRailCollapsed = bool(r.sessionRailCollapsed)
     if (r.fileRailVisible !== undefined) next.fileRailVisible = bool(r.fileRailVisible)
+    if (r.previewRailWidth !== undefined) next.previewRailWidth = int(r.previewRailWidth, LAYOUT_LIMITS.previewRail)
+    if (r.previewRailVisible !== undefined) next.previewRailVisible = bool(r.previewRailVisible)
     if (r.gridMode !== undefined) {
       if (!GRID_MODES.includes(r.gridMode as GridMode)) throw new Error('宫格模式不合法')
       next.gridMode = r.gridMode as GridMode
@@ -108,6 +110,8 @@ function normalize(r: Record<string, unknown>): Layout {
     sessionRailCollapsed: r.sessionRailCollapsed === true,
     fileRailWidth: safe(() => int(r.fileRailWidth, LAYOUT_LIMITS.fileRail), d.fileRailWidth),
     fileRailVisible: r.fileRailVisible !== false,
+    previewRailWidth: safe(() => int(r.previewRailWidth, LAYOUT_LIMITS.previewRail), d.previewRailWidth),
+    previewRailVisible: r.previewRailVisible === true,
     gridMode: GRID_MODES.includes(r.gridMode as GridMode) ? (r.gridMode as GridMode) : d.gridMode,
     cells: safe(() => cells(r.cells), [null, null, null, null]),
     splitRatioH: safe(() => ratio(r.splitRatioH), d.splitRatioH),

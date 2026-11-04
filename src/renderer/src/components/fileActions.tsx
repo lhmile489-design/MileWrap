@@ -1,5 +1,7 @@
 import { ArrowSquareOut, Copy, TextAa } from '@phosphor-icons/react'
 import { useSessions } from '../store/sessions'
+import { usePreview } from '../store/preview'
+import { PreviewEye } from './previewIcons'
 import { terminals } from '../terminal/TerminalRegistry'
 import { isLive } from '../lib/time'
 import { notifyError } from './ConfirmDialog'
@@ -50,10 +52,17 @@ async function copyAbsolute(workspaceId: string, rel: string): Promise<void> {
   }
 }
 
-/** 目录栏右键菜单：在资源管理器中显示 / 复制相对路径 / 复制绝对路径 / 插入到当前终端 */
+/** 目录栏右键菜单：预览 / 在资源管理器中显示 / 复制相对路径 / 复制绝对路径 / 插入到当前终端 */
 export function fileMenu(workspaceId: string, rel: string): MenuItem[] {
   const target = focusedSession()
+  const name = rel.split('/').pop() ?? rel
   return [
+    {
+      label: '预览',
+      icon: <PreviewEye size={16} />,
+      onSelect: () => usePreview.getState().open({ workspaceId, rel, name })
+    },
+    { kind: 'separator' },
     {
       label: '插入到当前终端',
       icon: <TextAa size={16} />,

@@ -382,3 +382,19 @@ UI 文档写的是空心方块。实际看下来，空心方块和复选框太�
 2. 恢复候选只增不减：每次退出，没手动关的会话都保持 `open=true`，下次启动没恢复也没忽略的又留着，一键恢复就把所有批次一起拉起。`SessionRecords.archiveStale` 在退出时调用：本次运行开过会话，就把启动时已有的可见候选归档（`open=false`）；本次什么都没开就退出，旧候选原样保留。目录缺失、工作区已删的记录不是可见候选，不动。
 
 否决的方案：启动时就归档（用户还没来得及看恢复卡片，旧会话就丢了）；只保留最近 N 条（N 没有依据，且仍会混批次）。
+
+## 2026-11-03 · 文件预览：首屏 JS 预算 900 → 950KB
+
+决策：预览栏相关增量（PreviewRail + preview store + FileRail/fileActions/App 接线 + .md-body 排版 + 4 个新 icon）≈ 30KB，主包从 ~900KB 涨到 ~930KB。verify-perf 的 `initialJsKB` 抬到 950。
+
+理由：marked（52KB）已独立成 MarkdownView chunk 不进首屏；Phosphor 新 icon 改成 `components/previewIcons.tsx` 只取 regular path（每个 ~0.4KB，省 ~16KB 全套 defs）。剩下的 ~14KB 是预览栏本体（rail 组件 + zustand + 布局字段）确实该占的位置 —— 它是常驻 UI 不是弹窗，不能 lazy。再往下压只能拆通用 helper 或换 icon 库，收益小、复杂度高，不值。
+
+2026-11-04 · Skills 管理不引入 SQLite，扫描即扫即用（文件系统是真相） | 本机 skill 数 < 200（claude 49 + codex 31 + 全局仓 100），实测全量扫描 < 100ms；skillkit 的「内容字段扫描覆盖、来源字段保留」策略里来源元数据量极小，JSON config 的 `skillMeta` 字段够用，省掉 better-sqlite3 的 ABI 重编负担。
+
+2026-11-04 · tar.gz 用系统 bsdtar 而非原生解压库 | Windows 10+ 自带 `C:\Windows\System32\tar.exe`（libarchive 3.8.9，自带路径穿越防护），PATH 里的 Git Bash GNU tar 不用（行为差异）；zip 用纯 JS 的 adm-zip 自己逐条目校验。零原生依赖，不碰 node-pty 式的 Electron ABI 重编。
+
+2026-11-04 · skill 详情首版禁图 | MarkdownView 的相对图片读取按 workspaceId 校验（预览栏契约），skill 没有 workspaceId；为 skill 单开一条受限读取频道收益低（SKILL.md 里图片少），首版让图片读取失败降级为占位文字，P1 再评估要不要专用频道。
+
+2026-11-04 · zip-slip 夹具必须手写 zip 二进制 | adm-zip 的 `addFile('../evil.txt')` 在打包时就把 entryName 规范化成 'evil.txt'——用 adm-zip 造的"恶意包"根本不是 zip-slip，防线等于没测。真夹具要手写 local file header 让 entryName 字面保留 `../`（见 verify-skills.cjs 的 buildEvilZip）。
+
+2026-11-04 · kimi / pi 不列进 Skills 管理 | 本机探针实测 `~/.kimi-code`、`~/.pi` 等候选目录都没有 skills/，硬列会显示空 agent；目录映射表集中在 SkillsService 的 SKILL_ROOTS，将来工具支持了加一行就回来。

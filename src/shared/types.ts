@@ -189,6 +189,62 @@ export type FileEntry = {
   link: boolean
 }
 
+/** fs:readText 的返回值：UTF-8 读文本文件；binary = 内容不是文本（前 8KB 含空字节） */
+export type FileTextPreview = {
+  content: string
+  truncated: boolean
+  binary: boolean
+  size: number
+  mtime: number
+}
+
+/** fs:readImage 的返回值：最长边超 1600px 由主进程等比缩放后的 data URL */
+export type FileImagePreview = {
+  dataUrl: string
+  width: number
+  height: number
+  size: number
+  mtime: number
+}
+
+/** Skills 管理（Skills管理-PRD §5）：一次扫描出的一个 skill */
+export type SkillInfo = {
+  /** skill 根的标识：'claude' | 'codex' | 'agents'（全局仓） */
+  agentId: string
+  /** frontmatter name，缺省用目录名；跨 agent 对照与 IPC 入参都用这个 */
+  name: string
+  description: string | null
+  /** 相对 skill 根目录的路径（/ 分隔）；详情读取走 skills:detail，路径本身不出主进程校验范围 */
+  rel: string
+  sizeBytes: number
+  mtime: number
+  /** 内置 / 受保护 skill 不可卸载 */
+  isBuiltin: boolean
+  source: 'github' | 'zip' | 'copy' | 'manual' | 'builtin'
+  installedAt: number | null
+}
+
+export type SkillsScanResult = {
+  skills: SkillInfo[]
+  scannedAt: number
+  /** 某个 agent 目录读不了不阻塞其他 agent */
+  errors: { agentId: string; message: string }[]
+}
+
+/** skills:detail 的返回值：剥了 frontmatter 的 SKILL.md 正文（>1MB 拒） */
+export type SkillDetail = {
+  filename: string
+  body: string
+  truncated: boolean
+}
+
+/** skills:installTo / skills:installZip 的执行结果 */
+export type SkillsInstallResult = {
+  installed: string[]
+  skipped: string[]
+  failed: { agentId: string; reason: string }[]
+}
+
 /** 会话状态：主进程内存里的运行时状态 */
 export type SessionStatus = 'starting' | 'running' | 'exited' | 'crashed'
 
@@ -251,6 +307,9 @@ export type Layout = {
   sessionRailCollapsed: boolean
   fileRailWidth: number
   fileRailVisible: boolean
+  /** 文件预览栏（目录栏右侧）：宽度与显隐持久化，预览的文件本身不持久化 */
+  previewRailWidth: number
+  previewRailVisible: boolean
   gridMode: GridMode
   cells: Cells
   splitRatioH: number
@@ -263,6 +322,7 @@ export type LayoutPatch = Partial<Omit<Layout, 'width' | 'height' | 'x' | 'y' | 
 export const LAYOUT_LIMITS = {
   sessionRail: { min: 160, max: 320 },
   fileRail: { min: 180, max: 400 },
+  previewRail: { min: 280, max: 640 },
   ratio: { min: 0.2, max: 0.8 },
   /** 每格最小尺寸（PRD T-02） */
   cell: { width: 360, height: 240 }
@@ -278,6 +338,8 @@ export const DEFAULT_LAYOUT: Layout = {
   sessionRailCollapsed: false,
   fileRailWidth: 240,
   fileRailVisible: true,
+  previewRailWidth: 380,
+  previewRailVisible: false,
   gridMode: 'single',
   cells: [null, null, null, null],
   splitRatioH: 0.5,

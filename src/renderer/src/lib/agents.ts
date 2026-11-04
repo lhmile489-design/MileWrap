@@ -3,10 +3,13 @@ import { useConfig } from '../store/config'
 import claudeIcon from '../assets/agents/claude.svg'
 import codexIcon from '../assets/agents/codex.svg'
 import kimiIcon from '../assets/agents/kimi.svg'
-import piIcon from '../assets/agents/pi.png'
+import piIcon from '../assets/agents/pi.svg'
+import globalIcon from '../assets/agents/global.svg'
 
 /** 内置 agent 的固定图标（docs/icons 里的设计稿原样放进 assets/agents）；用户不用自己找图 */
 export const AGENT_ICONS: Record<string, string> = { claude: claudeIcon, codex: codexIcon, kimi: kimiIcon, pi: piIcon }
+/** Skills 管理里「全局仓 ~/.agents/skills」的图标（skillkit MIT 图标集） */
+export const GLOBAL_SKILLS_ICON: string = globalIcon
 /** agent 徽章：字母缩写 + 分类色（UI设计约束 §4.3）。内置 agent 有固定图标（AGENT_ICONS）；自定义 agent 用用户选的底色 */
 export type BadgeStyle = { label: string; className: string; style?: React.CSSProperties }
 

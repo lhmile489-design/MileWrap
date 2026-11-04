@@ -7,6 +7,8 @@ import type {
   OrphanProcess,
   SessionActivity,
   FileEntry,
+  FileImagePreview,
+  FileTextPreview,
   HistoryDetail,
   HistoryExportFormat,
   HistoryListResult,
@@ -16,6 +18,9 @@ import type {
   PublicConfig,
   RestoreCandidate,
   RestoreResult,
+  SkillDetail,
+  SkillsInstallResult,
+  SkillsScanResult,
   Settings,
   SessionBuffer,
   SessionData,
@@ -81,6 +86,11 @@ const api = {
     watch: (workspaceId: string, relativePaths: string[]): Promise<void> =>
       ipcRenderer.invoke(CH.fsWatch, { workspaceId, relativePaths }),
     onChanged: (cb: (workspaceId: string) => void): Off => subscribe(CH.fsChanged, cb),
+    /** 单击文件预览：文本按 UTF-8 读（>2MB 拒、>1MB 截断）；图片缩放后给 data URL */
+    readText: (workspaceId: string, path: string): Promise<FileTextPreview> =>
+      ipcRenderer.invoke(CH.fsReadText, { workspaceId, relativePath: path }),
+    readImage: (workspaceId: string, path: string): Promise<FileImagePreview> =>
+      ipcRenderer.invoke(CH.fsReadImage, { workspaceId, relativePath: path }),
     /** 拖进来的文件 / 文件夹的本机路径（沙箱下 File.path 读不到）；只用来预填表单，主进程再校验 */
     pathForFile: (file: File): string => {
       try {
@@ -175,6 +185,23 @@ const api = {
     /** 续接到同 agent、同目录的工作区；workspaceId 缺省由主进程挑 */
     resume: (historyId: string, workspaceId?: string, dims: Dims = {}): Promise<HistoryResumeResult> =>
       ipcRenderer.invoke(CH.historyResume, { historyId, workspaceId, ...dims })
+  },
+  skills: {
+    scan: (): Promise<SkillsScanResult> => ipcRenderer.invoke(CH.skillsScan),
+    detail: (agentId: string, name: string): Promise<SkillDetail> => ipcRenderer.invoke(CH.skillsDetail, { agentId, name }),
+    installTo: (agentId: string, name: string, targets: string[], onConflict: 'skip' | 'overwrite'): Promise<SkillsInstallResult> =>
+      ipcRenderer.invoke(CH.skillsInstallTo, { agentId, name, targets, onConflict }),
+    uninstall: (agentId: string, name: string): Promise<{ ok: true }> => ipcRenderer.invoke(CH.skillsUninstall, { agentId, name }),
+    reveal: (agentId: string, name: string): Promise<void> => ipcRenderer.invoke(CH.skillsReveal, { agentId, name }),
+    /** 解析 GitHub URL（不下载），给「安装预览」用 */
+    parseGithubUrl: (url: string): Promise<{ owner: string; repo: string; branch: string; subpath: string; canonical: string }> =>
+      ipcRenderer.invoke(CH.skillsParseGithubUrl, { url }),
+    installGithub: (url: string, targets: string[], onConflict: 'skip' | 'overwrite'): Promise<SkillsInstallResult & { parsed: { canonical: string } }> =>
+      ipcRenderer.invoke(CH.skillsInstallGithub, { url, targets, onConflict }),
+    /** 主进程弹对话框选 zip；取消返回 null，路径不出渲染层 */
+    pickZip: (): Promise<string | null> => ipcRenderer.invoke(CH.skillsPickZip),
+    installZip: (zipPath: string, targets: string[], onConflict: 'skip' | 'overwrite'): Promise<SkillsInstallResult> =>
+      ipcRenderer.invoke(CH.skillsInstallZip, { zipPath, targets, onConflict })
   },
   shell: {
     openUrl: (url: string): Promise<void> => ipcRenderer.invoke(CH.shellOpenUrl, { url }),

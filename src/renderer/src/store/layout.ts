@@ -21,6 +21,7 @@ type LayoutState = Persisted & {
   /** 窄窗口里用户手动展开过：这段时间不再自动收（UI设计约束 §3「用户的选择优先」） */
   railOverride: boolean
   fileOverride: boolean
+  previewOverride: boolean
 
   load: () => Promise<void>
   setViewport: (width: number) => void
@@ -33,9 +34,10 @@ type LayoutState = Persisted & {
   /** 主进程列表里已经没有的会话，从格里清掉 */
   prune: (ids: Set<string>) => void
   setRatio: (axis: 'H' | 'V', ratio: number) => void
-  setRailWidth: (which: 'session' | 'file', px: number) => void
+  setRailWidth: (which: 'session' | 'file' | 'preview', px: number) => void
   toggleRail: () => void
   toggleFileRail: () => void
+  togglePreviewRail: () => void
   toggleMaximize: (cell: number) => void
 }
 
@@ -44,6 +46,8 @@ const PERSIST_KEYS: (keyof Persisted)[] = [
   'sessionRailCollapsed',
   'fileRailWidth',
   'fileRailVisible',
+  'previewRailWidth',
+  'previewRailVisible',
   'gridMode',
   'cells',
   'splitRatioH',
@@ -52,22 +56,26 @@ const PERSIST_KEYS: (keyof Persisted)[] = [
 
 type RailInput = Pick<
   LayoutState,
-  'gridMode' | 'viewport' | 'sessionRailWidth' | 'sessionRailCollapsed' | 'fileRailWidth' | 'fileRailVisible' | 'railOverride' | 'fileOverride'
+  'gridMode' | 'viewport' | 'sessionRailWidth' | 'sessionRailCollapsed' | 'fileRailWidth' | 'fileRailVisible' | 'previewRailWidth' | 'previewRailVisible' | 'railOverride' | 'fileOverride' | 'previewOverride'
 >
 
 /**
  * 栏位的实际显隐（UI设计约束 §3）：多格时控制台不足 744px，先临时收目录栏，仍不够再把会话栏收成 56px。
  * 只影响显示，不改用户偏好；窗口变宽后自动弹回。
  */
-export function railsOf(s: RailInput): { fileShown: boolean; railCollapsed: boolean } {
+export function railsOf(s: RailInput): { fileShown: boolean; railCollapsed: boolean; previewShown: boolean } {
   const need = s.gridMode === 'single' ? 0 : MIN_CONSOLE_FOR_COLUMNS
   const railW = s.sessionRailCollapsed ? COLLAPSED_RAIL_WIDTH : s.sessionRailWidth
+  // 收让顺序：预览栏最先收，其次目录栏，最后把会话栏收成 56px（预览是附属，空间先还给终端）
+  let previewShown = s.previewRailVisible
+  if (need && previewShown && !s.previewOverride && s.viewport - railW - s.fileRailWidth - s.previewRailWidth < need) previewShown = false
+  const previewW = previewShown ? s.previewRailWidth : 0
   let fileShown = s.fileRailVisible
-  if (need && fileShown && !s.fileOverride && s.viewport - railW - s.fileRailWidth < need) fileShown = false
+  if (need && fileShown && !s.fileOverride && s.viewport - railW - s.fileRailWidth - previewW < need) fileShown = false
   const fileW = fileShown ? s.fileRailWidth : 0
   let railCollapsed = s.sessionRailCollapsed
-  if (need && !railCollapsed && !s.railOverride && s.viewport - s.sessionRailWidth - fileW < need) railCollapsed = true
-  return { fileShown, railCollapsed }
+  if (need && !railCollapsed && !s.railOverride && s.viewport - s.sessionRailWidth - fileW - previewW < need) railCollapsed = true
+  return { fileShown, railCollapsed, previewShown }
 }
 
 export function visibleCount(s: { gridMode: GridMode }): number {
@@ -98,6 +106,7 @@ export const useLayout = create<LayoutState>((set, get) => ({
   viewport: typeof window === 'undefined' ? 1440 : window.innerWidth,
   railOverride: false,
   fileOverride: false,
+  previewOverride: false,
 
   load: async () => {
     const l = await window.warp.layout.get()
@@ -109,6 +118,7 @@ export const useLayout = create<LayoutState>((set, get) => ({
     // 窗口变宽到不需要自动收了：用户的临时展开选择随之失效
     const s = get()
     if (s.fileOverride && railsOf({ ...s, fileOverride: false }).fileShown) set({ fileOverride: false })
+    if (s.previewOverride && railsOf({ ...s, previewOverride: false }).previewShown) set({ previewOverride: false })
     if (s.railOverride && !railsOf({ ...s, railOverride: false }).railCollapsed) set({ railOverride: false })
   },
 
@@ -157,9 +167,9 @@ export const useLayout = create<LayoutState>((set, get) => ({
   setRatio: (axis, ratio) => set(axis === 'H' ? { splitRatioH: clampRatio(ratio) } : { splitRatioV: clampRatio(ratio) }),
 
   setRailWidth: (which, px) => {
-    const lim = which === 'session' ? LAYOUT_LIMITS.sessionRail : LAYOUT_LIMITS.fileRail
+    const lim = which === 'session' ? LAYOUT_LIMITS.sessionRail : which === 'file' ? LAYOUT_LIMITS.fileRail : LAYOUT_LIMITS.previewRail
     const w = Math.round(Math.min(lim.max, Math.max(lim.min, px)))
-    set(which === 'session' ? { sessionRailWidth: w } : { fileRailWidth: w })
+    set(which === 'session' ? { sessionRailWidth: w } : which === 'file' ? { fileRailWidth: w } : { previewRailWidth: w })
   },
 
   toggleRail: () => {
@@ -183,6 +193,16 @@ export const useLayout = create<LayoutState>((set, get) => ({
     set({ fileRailVisible: true, fileOverride: !railsOf(probe).fileShown })
   },
 
+  togglePreviewRail: () => {
+    const s = get()
+    if (railsOf(s).previewShown) {
+      set({ previewRailVisible: false, previewOverride: false })
+      return
+    }
+    const probe = { ...s, previewRailVisible: true, previewOverride: false }
+    set({ previewRailVisible: true, previewOverride: !railsOf(probe).previewShown })
+  },
+
   toggleMaximize: (cell) => {
     const s = get()
     if (visibleCount(s) === 1) return
@@ -196,6 +216,8 @@ function pickPersisted(l: Persisted): Persisted {
     sessionRailCollapsed: l.sessionRailCollapsed,
     fileRailWidth: l.fileRailWidth,
     fileRailVisible: l.fileRailVisible,
+    previewRailWidth: l.previewRailWidth,
+    previewRailVisible: l.previewRailVisible,
     gridMode: l.gridMode,
     cells: [...l.cells] as Cells,
     splitRatioH: l.splitRatioH,

@@ -36,6 +36,10 @@ type UiState = {
   history: { cwd: string | null } | null
   openHistory: (cwd?: string | null) => void
   closeHistory: () => void
+  /** Skills 管理对话框（Skills管理-PRD §4.1） */
+  skillsOpen: boolean
+  openSkills: () => void
+  closeSkills: () => void
   setExpanded: (workspaceId: string, open: boolean) => void
   openCreate: (groupId?: string | null, prefill?: { cwd: string; name: string }) => void
   openEdit: (id: string) => void
@@ -63,6 +67,9 @@ export const useUi = create<UiState>((set, get) => ({
   history: null,
   openHistory: (cwd = null) => set({ history: { cwd }, paletteOpen: false }),
   closeHistory: () => set({ history: null }),
+  skillsOpen: false,
+  openSkills: () => set({ skillsOpen: true, paletteOpen: false }),
+  closeSkills: () => set({ skillsOpen: false }),
   openSettings: (tab = 'appearance') => set({ settingsTab: tab, paletteOpen: false }),
   closeSettings: () => set({ settingsTab: null }),
   setPaletteOpen: (open) => set({ paletteOpen: open }),

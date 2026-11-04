@@ -15,6 +15,7 @@ import {
   SidebarSimple,
   Square,
   Sun,
+  SquaresFour,
   X,
   type Icon
 } from '@phosphor-icons/react'
@@ -70,6 +71,7 @@ export function TitleBar(): React.JSX.Element {
   const broadcast = useUi((s) => s.broadcast)
   const openSettings = useUi((s) => s.openSettings)
   const openHistory = useUi((s) => s.openHistory)
+  const openSkills = useUi((s) => s.openSkills)
   const theme = useConfig((s) => s.config?.settings.theme ?? 'system')
   const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Desktop
 
@@ -123,7 +125,7 @@ export function TitleBar(): React.JSX.Element {
           })}
         </div>
       </div>
-      <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2">
+      <div className="app-no-drag flex min-w-0 flex-1 items-center justify-center gap-2 px-2">
         {/* 全局搜索触发框（UI设计约束 §4.4）：点开是命令面板 */}
         <button
           type="button"
@@ -146,6 +148,9 @@ export function TitleBar(): React.JSX.Element {
         </IconButton>
         <IconButton label="会话历史（Ctrl+Shift+H）" onClick={() => openHistory()}>
           <ArrowCounterClockwise size={16} />
+        </IconButton>
+        <IconButton label="Skills 管理（Ctrl+Shift+S）" onClick={() => openSkills()}>
+          <SquaresFour size={16} />
         </IconButton>
       </div>
       <div className="app-no-drag flex items-center gap-0.5 pr-1">
