@@ -398,3 +398,9 @@ UI 文档写的是空心方块。实际看下来，空心方块和复选框太�
 2026-11-04 · zip-slip 夹具必须手写 zip 二进制 | adm-zip 的 `addFile('../evil.txt')` 在打包时就把 entryName 规范化成 'evil.txt'——用 adm-zip 造的"恶意包"根本不是 zip-slip，防线等于没测。真夹具要手写 local file header 让 entryName 字面保留 `../`（见 verify-skills.cjs 的 buildEvilZip）。
 
 2026-11-04 · kimi / pi 不列进 Skills 管理 | 本机探针实测 `~/.kimi-code`、`~/.pi` 等候选目录都没有 skills/，硬列会显示空 agent；目录映射表集中在 SkillsService 的 SKILL_ROOTS，将来工具支持了加一行就回来。
+
+2026-11-05 · 放宽「不执行 git」：只在设置「启用 Git 管理」打开后执行，默认关（Git管理-PRD §6.1） | 原决策是为了不碰用户仓库配置和 hooks；但 agent 改完文件后要切工具看 diff、提交，是最高频的出窗口动作。改成显式总开关：关着时应用零 git 进程，行为与之前一致，`GitInfoService` 读 `.git/HEAD` 不变；打开后由主进程按 workspaceId 取目录执行，参数数组 + 环境清洗 + 超时。界面放右栏页签（与预览共用槽位）+ 工作台弹窗，不做格内面板（要把 `cells` 改成联合类型，牵动宫格、恢复、托盘全链路）。主进程用 simple-git（源项目同款，纯 JS、不进渲染包），不引入 better-sqlite3（工作区本身就是仓库登记，省掉原生模块重编）。提交照常跑仓库 hooks，等同用户在命令行提交。升级建议 §3.8 的目录栏改动标记并入（G-18），复用同一次 `git status`。
+
+2026-11-05 · GitService 的 git 子进程固定加 `-c core.fsmonitor=false -c core.quotepath=false` 与 `GIT_OPTIONAL_LOCKS=0` | 仓库配置里的 `core.fsmonitor` 是任意命令，`git status` 会执行它，打开一个不受信任的仓库就等于运行它的代码，所以每条命令都在命令行上把它关掉（命令行 `-c` 优先于仓库配置，verify-git 用恶意配置实测）；quotepath 关掉免得中文路径被转义成八进制；agent 可能同时在同一仓库跑 git，status 不抢 `index.lock`。只认 PATH 里的 `git.exe`，不走 `git.cmd`（要经 cmd.exe）。simple-git 的 `allowUnsafeCustomBinary` / `allowUnsafeFsMonitor` 两个放行是因为：前者的字符校验拒绝 `C:/Program Files/...` 里的空格，路径来自主进程 PATH 查找、不来自渲染层；后者拦的正是我们用来关 fsmonitor 的 `-c core.fsmonitor=false`。
+
+2026-11-05 · git:probe 不返回仓库绝对路径 | 只给 `repoName`（仓库根目录名）和 `relativeDir`（工作区相对仓库根的子目录），与「路径不出主进程」一致；PRD §7 草案里的 `repoRoot` 按代码回写为 `repoName`。

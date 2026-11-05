@@ -181,7 +181,7 @@ app.whenReady().then(async () => {
   await sleep(600)
   await js(`document.querySelector('button[aria-label^="设置"]').click()`)
   await waitFor(`!!document.querySelector('[data-testid="settings-dialog"]')`, 2000)
-  for (const tab of ['appearance', 'terminal', 'agents', 'startup', 'about']) {
+  for (const tab of ['appearance', 'terminal', 'agents', 'startup', 'git', 'about']) {
     await js(`document.querySelector('[data-settings-tab="${tab}"]').click()`)
     await audit(`设置 · ${tab}`)
   }

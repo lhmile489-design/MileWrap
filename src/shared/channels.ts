@@ -24,6 +24,9 @@ export const CH = {
   fsListDir: 'fs:listDir',
   fsReveal: 'fs:reveal',
   gitBranch: 'git:branch',
+  /** Git 管理（Git管理-PRD §7）：渲染层只传 workspaceId，仓库目录由主进程从配置求；gitEnabled 为 false 时一律拒绝 */
+  gitProbe: 'git:probe',
+  gitStatus: 'git:status',
   shellOpenPath: 'shell:openPath',
   shellOpenExternalTerminal: 'shell:openExternalTerminal',
 

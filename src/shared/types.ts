@@ -101,6 +101,10 @@ export type Settings = {
   lineHeight: number
   cursorStyle: 'block' | 'bar' | 'underline'
   cursorBlink: boolean
+  /** Git 管理总开关（Git管理-PRD G-01）：false 时主进程不执行任何 git 命令 */
+  gitEnabled: boolean
+  /** push 自动设上游时用的远端名（G-24），只允许 [A-Za-z0-9._-] 且不以 - 开头 */
+  gitDefaultRemote: string
 }
 
 export type ResumeMode = 'exact' | 'continue' | 'fresh'
@@ -196,6 +200,35 @@ export type FileTextPreview = {
   binary: boolean
   size: number
   mtime: number
+}
+
+/** git:probe 的返回值（Git管理-PRD G-04）。路径不出主进程：只给仓库根名与工作区相对仓库根的子目录 */
+export type GitProbe =
+  | { available: true; repoName: string; relativeDir: string }
+  | { available: false; reason: 'disabled' | 'no-git' | 'not-repo' }
+  | { available: false; reason: 'error'; message: string }
+
+export type GitFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked' | 'conflict'
+
+/** 改动列表的一行。path / oldPath 相对仓库根，斜杠统一为 / */
+export type GitFile = {
+  path: string
+  oldPath?: string
+  status: GitFileStatus
+  staged: boolean
+}
+
+/** git:status 的返回值 */
+export type GitStatus = {
+  /** 当前分支；detached 时为短哈希 */
+  branch: string
+  detached: boolean
+  ahead: number
+  behind: number
+  /** 上游分支名（如 origin/main），没有为 null */
+  upstream: string | null
+  hasRemote: boolean
+  files: GitFile[]
 }
 
 /** fs:readImage 的返回值：最长边超 1600px 由主进程等比缩放后的 data URL */
@@ -365,7 +398,9 @@ export const DEFAULT_SETTINGS: Settings = {
   dndEnd: 0,
   lineHeight: 1.5,
   cursorStyle: 'block',
-  cursorBlink: true
+  cursorBlink: true,
+  gitEnabled: false,
+  gitDefaultRemote: 'origin'
 }
 
 /** 本机 agent 的历史会话（会话管理升级计划 §3.1）。路径不出主进程，渲染层只拿 historyId */

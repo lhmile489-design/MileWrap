@@ -10,7 +10,7 @@ export type WorkspaceDialogState =
  * 不需要持久化的界面状态：会话子行展开、工作区弹窗、广播、长文本输入框。
  * 栏位显隐、栏宽、宫格在 store/layout.ts（写 window-state.json）。
  */
-export type SettingsTab = 'appearance' | 'terminal' | 'agents' | 'notify' | 'startup' | 'about'
+export type SettingsTab = 'appearance' | 'terminal' | 'agents' | 'notify' | 'startup' | 'git' | 'about'
 
 type UiState = {
   /** 展开了会话子行的工作区 */

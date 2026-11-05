@@ -17,6 +17,7 @@ import { FilePreviewService } from './services/FilePreviewService'
 import { SkillsService } from './services/SkillsService'
 import { installFromGithub, installFromZip, parseGithubUrl } from './lib/githubInstall'
 import { GitInfoService } from './services/GitInfoService'
+import { GitService } from './services/GitService'
 import { HISTORY_ID_RE, SessionHistoryService } from './services/SessionHistory'
 import { openExternalTerminal } from './platform/win32/terminal'
 import { initLog, log, logDir } from './lib/log'
@@ -215,6 +216,7 @@ app.whenReady().then(() => {
   const files = new FileTreeService(config, (id) => sendToRenderer(CH.fsChanged, id))
   const preview = new FilePreviewService(files)
   const git = new GitInfoService(config)
+  const gitOps = new GitService(config)
   const layout = new LayoutStore(join(app.getPath('appData'), 'mile-warp'))
   sessions.setCellResolver((id) => {
     const l = layout.get()
@@ -372,6 +374,8 @@ app.whenReady().then(() => {
   handle(CH.fsListDir, (arg) => files.list(arg))
   handle(CH.fsReveal, async (arg) => shell.showItemInFolder(await files.resolvePath(arg)))
   handle(CH.gitBranch, (arg) => git.branch(arg))
+  handle(CH.gitProbe, (arg) => gitOps.probe(arg))
+  handle(CH.gitStatus, (arg) => gitOps.status(arg))
   handle(CH.shellOpenPath, async (arg) => {
     const err = await shell.openPath(workspaceDir(arg))
     if (err) throw new Error(err)
@@ -405,6 +409,8 @@ app.whenReady().then(() => {
       c.settings = { ...c.settings, ...patch }
     })
     if (patch.theme) nativeTheme.themeSource = patch.theme
+    // 打开 Git 开关时重新找 git.exe（用户可能刚装好 Git）
+    if (patch.gitEnabled !== undefined) gitOps.resetBinary()
     return config.toPublic()
   })
   handle(CH.agentShells, () => agents.shells())

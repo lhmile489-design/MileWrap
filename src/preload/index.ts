@@ -9,6 +9,8 @@ import type {
   FileEntry,
   FileImagePreview,
   FileTextPreview,
+  GitProbe,
+  GitStatus,
   HistoryDetail,
   HistoryExportFormat,
   HistoryListResult,
@@ -101,7 +103,10 @@ const api = {
     }
   },
   git: {
-    branch: (workspaceId: string): Promise<string | null> => ipcRenderer.invoke(CH.gitBranch, { workspaceId })
+    branch: (workspaceId: string): Promise<string | null> => ipcRenderer.invoke(CH.gitBranch, { workspaceId }),
+    /** Git 管理（Git管理-PRD）：settings.gitEnabled 为 false 时 probe 返回 disabled，其它调用直接拒绝 */
+    probe: (workspaceId: string): Promise<GitProbe> => ipcRenderer.invoke(CH.gitProbe, { workspaceId }),
+    status: (workspaceId: string): Promise<GitStatus> => ipcRenderer.invoke(CH.gitStatus, { workspaceId })
   },
   agent: {
     list: (): Promise<AgentInfo[]> => ipcRenderer.invoke(CH.agentList),

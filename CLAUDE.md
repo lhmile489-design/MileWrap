@@ -14,6 +14,7 @@ Mile Warp：Windows 本机桌面应用，集中管理和运行终端类 AI agent
 | `docs/decisions.md` | 决策记录，格式 `日期 · 决策 · 理由`，只记「为什么不那样做」 |
 | `docs/踩坑记录.md` | 按里程碑记录现象、原因、对策 |
 | `docs/升级建议.md` | M5 之后的交互与功能升级建议（分档、成本、实现要点、推进顺序） |
+| `docs/Git管理-PRD.md` | Git 管理（G-）：总开关、右栏 Git 页签、工作台弹窗、安全规则、IPC 草案、G0–G4 里程碑 |
 
 偏离文档的设计变更要写进 `decisions.md`；踩到的坑写进 `踩坑记录.md`。
 
@@ -34,6 +35,7 @@ npx electron scripts/verify-m5-settings.cjs  # 设置 / 主题 / 快捷键 / 命
 npx electron scripts/verify-upgrade.cjs      # 升级建议各项（迁移 / 活动 / 自定义 agent / 路径 / 预设 / 广播 / 有更新 / 崩溃重载）
 npx electron scripts/verify-preview.cjs      # 目录栏文件预览（IPC 上限与越界 / md sanitizer / 相对图片 / Esc / 切工作区）
 npx electron scripts/verify-skills.cjs       # Skills 管理（扫描 / 详情 / 卸载 / 跨 agent 安装 / 冲突 .bak / 弹窗与搜索）
+npx electron scripts/verify-git.cjs          # Git 管理（总开关 / probe / status / 中文路径 / 恶意 fsmonitor 不执行）
 node scripts/probe-skills.cjs                # 本机 agent skill 目录探针（只读，M0 定稿目录映射表用）
 npm run verify:all                           # 依次跑全部 harness，日志存 %TEMP%\warp-verify\（M1 需要 PATH 里有 codex）
 npx electron scripts/verify-layout.cjs       # 控件文字不折行、不溢出（多种宽度与格数、各弹窗菜单）
@@ -202,5 +204,12 @@ README.md        面向使用者的说明（功能、快捷键、数据位置、
 - 首屏 935KB < 950 预算；SkillsDialog chunk 12.4KB。
 - 未做：P2 的同名对照批量安装、GitHub 来源更新检查、skills.sh 市场、skill 详情图片（首版禁图，P1 再议）。
 - 待人工确认：真实 GitHub 连通性（harness 用本地假源）；真实 agent 是否识别新装的 skill。
+
+### Git 管理（2026-11-05，`docs/Git管理-PRD.md` 定稿 v1.0）
+
+- PRD 已定稿，§10 六个问题全部按草案默认拍板；decisions 同日条目放宽「不执行 git」（仅总开关打开后）。
+- G0 完成：`Settings.gitEnabled`（默认 false）/ `gitDefaultRemote`（默认 origin，拒 `-` 开头）+ 设置页「Git」页签；主进程 `services/GitService.ts`（simple-git，`git.exe` 由 `whichCommand` 从 PATH 找，固定 `-c core.fsmonitor=false -c core.quotepath=false`、`GIT_OPTIONAL_LOCKS=0`、剥 `GIT_EDITOR` 等变量、本地命令 15 秒超时）；IPC `git:probe`（不返回绝对路径）/ `git:status`，开关关着时 probe 返回 disabled、其它一律拒绝。原 `GitInfoService` / `git:branch` 不动。
+- `npx electron scripts/verify-git.cjs`（45 项）：默认关零 git、设置页开关落盘、远端名校形、probe（子目录 / 非仓库 / 越权 id）、status（中文空格路径、重命名带 oldPath、同文件暂存+未暂存两行、删除、detached、远端）、恶意 `core.fsmonitor` 不被执行。首屏 914KB。
+- 下一步 G1：右栏页签、改动列表、暂存 / 取消 / 丢弃、diff、提交、自动刷新。
 
 更新进度时改本节。
