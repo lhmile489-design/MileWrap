@@ -376,6 +376,12 @@ app.whenReady().then(() => {
   handle(CH.gitBranch, (arg) => git.branch(arg))
   handle(CH.gitProbe, (arg) => gitOps.probe(arg))
   handle(CH.gitStatus, (arg) => gitOps.status(arg))
+  handle(CH.gitStage, (arg) => gitOps.stage(arg))
+  handle(CH.gitUnstage, (arg) => gitOps.unstage(arg))
+  handle(CH.gitDiscardPrepare, (arg) => gitOps.discardPrepare(arg))
+  handle(CH.gitDiscard, (arg) => gitOps.discard(arg))
+  handle(CH.gitDiff, (arg) => gitOps.diff(arg))
+  handle(CH.gitCommit, (arg) => gitOps.commit(arg))
   handle(CH.shellOpenPath, async (arg) => {
     const err = await shell.openPath(workspaceDir(arg))
     if (err) throw new Error(err)

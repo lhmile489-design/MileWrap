@@ -57,8 +57,8 @@ export const usePreview = create<PreviewState>((set, get) => {
       const id = ++reqId
       set({ target: t, loading: true, error: null })
       // 栏收起时单击文件顺手展开（用户动作优先于自动收栏）
-      const layout = useLayout.getState()
-      if (!layout.previewRailVisible) layout.togglePreviewRail()
+      // 右栏与 Git 共用槽位：切回「预览」页签（Git管理-PRD §4.1）
+      useLayout.getState().showRightTab('preview')
       const req: Promise<PreviewResult> = isImage(t.name)
         ? window.warp.fs.readImage(t.workspaceId, t.rel).then((data) => ({ kind: 'image', data }))
         : window.warp.fs.readText(t.workspaceId, t.rel).then((data) => ({ kind: 'text', data }))

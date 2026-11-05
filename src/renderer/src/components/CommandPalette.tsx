@@ -119,6 +119,7 @@ function buildItems(): Item[] {
   act('grid-quad', '布局：四宫格', 'grid layout 4 quad', () => l.setGridMode('quad'))
   act('toggle-rail', '显示 / 收起会话栏', 'sidebar rail ctrl+shift+b', () => l.toggleRail())
   act('toggle-files', '显示 / 隐藏目录栏', 'files tree ctrl+shift+e', () => l.toggleFileRail())
+  if (cfg?.settings.gitEnabled) act('toggle-git', '打开 / 关闭 Git 栏', 'git status commit diff ctrl+shift+g', () => l.toggleGitRail())
   const fs = focusedSession()
   if (fs) act('find', '在当前终端中搜索', 'search find ctrl+shift+f', () => ui.setSearchCell(l.focused))
   act('theme-system', '主题：跟随系统', 'theme system', () => setTheme('system'))

@@ -3,6 +3,7 @@ export const SHORTCUTS: [string, string][] = [
   ['Ctrl+Shift+K', '命令面板'],
   ['Ctrl+/', '快捷键速查'],
   ['Ctrl+Shift+H', '会话历史'],
+  ['Ctrl+Shift+G', 'Git 栏（需在设置里启用 Git 管理）'],
   ['Ctrl+,', '设置'],
   ['Ctrl+Shift+B / E', '显隐会话栏 / 目录栏'],
   ['Ctrl+Shift+D', '宫格 1 → 2 → 4'],

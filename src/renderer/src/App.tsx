@@ -101,6 +101,10 @@ function onShortcut(e: KeyboardEvent): void {
     // Skills 管理（Skills管理-PRD §4.1）
     if (ui.skillsOpen) ui.closeSkills()
     else ui.openSkills()
+  } else if (code === 'KeyG') {
+    // Git 栏（Git管理-PRD G-02）：总开关关着时不拦截，按键照常交给终端
+    if (useConfig.getState().config?.settings.gitEnabled !== true) return
+    l.toggleGitRail()
   } else if (code === 'KeyF') {
     // 终端内搜索（PRD T-12）：只对聚焦格里有会话时生效
     if (!l.cells[l.focused]) return

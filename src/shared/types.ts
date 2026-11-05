@@ -231,6 +231,15 @@ export type GitStatus = {
   files: GitFile[]
 }
 
+/** git:diff 的一行；oldNo / newNo 只有对应一侧存在时才有 */
+export type GitDiffLine = { type: 'context' | 'added' | 'removed'; content: string; oldNo: number | null; newNo: number | null }
+export type GitDiffHunk = { header: string; lines: GitDiffLine[] }
+/** git:diff 的返回值：binary / tooLarge（>1MB 或 >5000 行）时 hunks 为空 */
+export type GitDiff = { hunks: GitDiffHunk[]; binary: boolean; tooLarge: boolean; added: number; removed: number }
+
+/** git:discardPrepare 的返回值：确认框列出的文件；token 一次性、60 秒内有效 */
+export type GitDiscardPlan = { token: string; files: { path: string; untracked: boolean }[] }
+
 /** fs:readImage 的返回值：最长边超 1600px 由主进程等比缩放后的 data URL */
 export type FileImagePreview = {
   dataUrl: string
@@ -343,11 +352,16 @@ export type Layout = {
   /** 文件预览栏（目录栏右侧）：宽度与显隐持久化，预览的文件本身不持久化 */
   previewRailWidth: number
   previewRailVisible: boolean
+  /** 右栏显示哪个页签（Git管理-PRD §4.1）：预览与 Git 共用右栏槽位、显隐与宽度 */
+  rightRailTab: RightRailTab
   gridMode: GridMode
   cells: Cells
   splitRatioH: number
   splitRatioV: number
 }
+
+export type RightRailTab = 'preview' | 'git'
+export const RIGHT_RAIL_TABS: RightRailTab[] = ['preview', 'git']
 
 /** layout:update 的入参：渲染层能改的字段 */
 export type LayoutPatch = Partial<Omit<Layout, 'width' | 'height' | 'x' | 'y' | 'maximized'>>
@@ -373,6 +387,7 @@ export const DEFAULT_LAYOUT: Layout = {
   fileRailVisible: true,
   previewRailWidth: 380,
   previewRailVisible: false,
+  rightRailTab: 'preview',
   gridMode: 'single',
   cells: [null, null, null, null],
   splitRatioH: 0.5,

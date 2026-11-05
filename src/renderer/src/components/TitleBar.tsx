@@ -7,6 +7,7 @@ import {
   FloppyDisk,
   FolderSimple,
   Gear,
+  GitBranch,
   GridFour,
   Layout,
   MagnifyingGlass,
@@ -73,6 +74,10 @@ export function TitleBar(): React.JSX.Element {
   const openHistory = useUi((s) => s.openHistory)
   const openSkills = useUi((s) => s.openSkills)
   const theme = useConfig((s) => s.config?.settings.theme ?? 'system')
+  // Git 栏入口只在设置「启用 Git 管理」打开后出现（Git管理-PRD G-02）
+  const gitEnabled = useConfig((s) => s.config?.settings.gitEnabled === true)
+  const gitShown = useLayout((s) => s.rightRailTab === 'git' && railsOf(s).previewShown)
+  const toggleGitRail = useLayout((s) => s.toggleGitRail)
   const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Desktop
 
   return (
@@ -88,6 +93,11 @@ export function TitleBar(): React.JSX.Element {
         <IconButton label="目录栏（Ctrl+Shift+E）" pressed={fileShown} onClick={toggleFileRail}>
           <FolderSimple size={16} />
         </IconButton>
+        {gitEnabled && (
+          <IconButton label="Git 栏（Ctrl+Shift+G）" pressed={gitShown} onClick={toggleGitRail}>
+            <GitBranch size={16} />
+          </IconButton>
+        )}
         {/* 宫格切换（PRD T-02）：分段控件，方向键在三项之间移动 */}
         <div
           role="radiogroup"

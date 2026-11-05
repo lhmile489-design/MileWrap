@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { DEFAULT_LAYOUT, LAYOUT_LIMITS, type Cells, type GridMode, type LayoutPatch } from '@shared/types'
+import { DEFAULT_LAYOUT, LAYOUT_LIMITS, type Cells, type GridMode, type LayoutPatch, type RightRailTab } from '@shared/types'
 
 export const CELL_COUNT: Record<GridMode, number> = { single: 1, dual: 2, quad: 4 }
 const NEXT_MODE: Record<GridMode, GridMode> = { single: 'dual', dual: 'quad', quad: 'single' }
@@ -38,6 +38,10 @@ type LayoutState = Persisted & {
   toggleRail: () => void
   toggleFileRail: () => void
   togglePreviewRail: () => void
+  /** 切右栏页签并确保右栏展开（Git管理-PRD §4.1：预览与 Git 共用右栏） */
+  showRightTab: (tab: RightRailTab) => void
+  /** Ctrl+Shift+G：Git 页签开着就收起右栏，否则切到 Git 页签并展开 */
+  toggleGitRail: () => void
   toggleMaximize: (cell: number) => void
 }
 
@@ -48,6 +52,7 @@ const PERSIST_KEYS: (keyof Persisted)[] = [
   'fileRailVisible',
   'previewRailWidth',
   'previewRailVisible',
+  'rightRailTab',
   'gridMode',
   'cells',
   'splitRatioH',
@@ -203,6 +208,21 @@ export const useLayout = create<LayoutState>((set, get) => ({
     set({ previewRailVisible: true, previewOverride: !railsOf(probe).previewShown })
   },
 
+  showRightTab: (tab) => {
+    const s = get()
+    if (s.rightRailTab !== tab) set({ rightRailTab: tab })
+    if (!railsOf(get()).previewShown) get().togglePreviewRail()
+  },
+
+  toggleGitRail: () => {
+    const s = get()
+    if (s.rightRailTab === 'git' && railsOf(s).previewShown) {
+      set({ previewRailVisible: false, previewOverride: false })
+      return
+    }
+    get().showRightTab('git')
+  },
+
   toggleMaximize: (cell) => {
     const s = get()
     if (visibleCount(s) === 1) return
@@ -218,6 +238,7 @@ function pickPersisted(l: Persisted): Persisted {
     fileRailVisible: l.fileRailVisible,
     previewRailWidth: l.previewRailWidth,
     previewRailVisible: l.previewRailVisible,
+    rightRailTab: l.rightRailTab,
     gridMode: l.gridMode,
     cells: [...l.cells] as Cells,
     splitRatioH: l.splitRatioH,

@@ -27,6 +27,13 @@ export const CH = {
   /** Git 管理（Git管理-PRD §7）：渲染层只传 workspaceId，仓库目录由主进程从配置求；gitEnabled 为 false 时一律拒绝 */
   gitProbe: 'git:probe',
   gitStatus: 'git:status',
+  gitStage: 'git:stage',
+  gitUnstage: 'git:unstage',
+  /** 丢弃两步走：prepare 返回要确认的文件与一次性 token，discard 只收 token */
+  gitDiscardPrepare: 'git:discardPrepare',
+  gitDiscard: 'git:discard',
+  gitDiff: 'git:diff',
+  gitCommit: 'git:commit',
   shellOpenPath: 'shell:openPath',
   shellOpenExternalTerminal: 'shell:openExternalTerminal',
 

@@ -35,7 +35,7 @@ npx electron scripts/verify-m5-settings.cjs  # 设置 / 主题 / 快捷键 / 命
 npx electron scripts/verify-upgrade.cjs      # 升级建议各项（迁移 / 活动 / 自定义 agent / 路径 / 预设 / 广播 / 有更新 / 崩溃重载）
 npx electron scripts/verify-preview.cjs      # 目录栏文件预览（IPC 上限与越界 / md sanitizer / 相对图片 / Esc / 切工作区）
 npx electron scripts/verify-skills.cjs       # Skills 管理（扫描 / 详情 / 卸载 / 跨 agent 安装 / 冲突 .bak / 弹窗与搜索）
-npx electron scripts/verify-git.cjs          # Git 管理（总开关 / probe / status / 中文路径 / 恶意 fsmonitor 不执行）
+npx electron scripts/verify-git.cjs          # Git 管理（总开关 / probe / status / 暂存 / diff / 丢弃 token / 提交与 hooks / 右栏 Git 页签）
 node scripts/probe-skills.cjs                # 本机 agent skill 目录探针（只读，M0 定稿目录映射表用）
 npm run verify:all                           # 依次跑全部 harness，日志存 %TEMP%\warp-verify\（M1 需要 PATH 里有 codex）
 npx electron scripts/verify-layout.cjs       # 控件文字不折行、不溢出（多种宽度与格数、各弹窗菜单）
@@ -210,6 +210,8 @@ README.md        面向使用者的说明（功能、快捷键、数据位置、
 - PRD 已定稿，§10 六个问题全部按草案默认拍板；decisions 同日条目放宽「不执行 git」（仅总开关打开后）。
 - G0 完成：`Settings.gitEnabled`（默认 false）/ `gitDefaultRemote`（默认 origin，拒 `-` 开头）+ 设置页「Git」页签；主进程 `services/GitService.ts`（simple-git，`git.exe` 由 `whichCommand` 从 PATH 找，固定 `-c core.fsmonitor=false -c core.quotepath=false`、`GIT_OPTIONAL_LOCKS=0`、剥 `GIT_EDITOR` 等变量、本地命令 15 秒超时）；IPC `git:probe`（不返回绝对路径）/ `git:status`，开关关着时 probe 返回 disabled、其它一律拒绝。原 `GitInfoService` / `git:branch` 不动。
 - `npx electron scripts/verify-git.cjs`（45 项）：默认关零 git、设置页开关落盘、远端名校形、probe（子目录 / 非仓库 / 越权 id）、status（中文空格路径、重命名带 oldPath、同文件暂存+未暂存两行、删除、detached、远端）、恶意 `core.fsmonitor` 不被执行。首屏 914KB。
-- 下一步 G1：右栏页签、改动列表、暂存 / 取消 / 丢弃、diff、提交、自动刷新。
+- G1 完成：右栏与预览共用槽位，Git 开关打开时出现「预览 / Git」页签条（`Layout.rightRailTab` 持久化，`showRightTab` / `toggleGitRail`）；入口标题栏按钮、`Ctrl+Shift+G`、命令面板，都只在总开关打开时出现。`components/git/GitPanel.tsx` + `store/git.ts` 整包 lazy（25KB chunk）：改动列表（已暂存 / 未暂存、字母徽标 + 文字标签）、暂存 / 取消 / 丢弃、diff、提交框（草稿 `localStorage` `warp.commitDraft.<id>`）、自动刷新（打开、窗口焦点、会话从对话中转安静，节流 2 秒）。IPC `git:stage / unstage / discardPrepare / discard / diff / commit`；丢弃两步走（prepare 发 60 秒一次性 token，discard 只收 token）；diff 加 `--no-ext-diff --no-textconv`；提交照跑 hooks，失败把输出原样带回。
+- `verify-git.cjs` 105 项（G0 45 + G1 IPC 与渲染层）；首屏 916KB。
+- 下一步 G2：分支菜单、切换 / 新建、fetch / pull / push、进度与取消。
 
 更新进度时改本节。

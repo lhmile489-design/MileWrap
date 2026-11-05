@@ -1,7 +1,8 @@
 import { Suspense, lazy, memo } from 'react'
 import { ArrowSquareOut, X } from '@phosphor-icons/react'
 import { PreviewCode, PreviewFileX, PreviewWarningCircle } from './previewIcons'
-import { LAYOUT_LIMITS } from '@shared/types'
+import { LAYOUT_LIMITS, type RightRailTab } from '@shared/types'
+import { useConfig } from '../store/config'
 import { isMarkdown, usePreview } from '../store/preview'
 import { railsOf, useLayout } from '../store/layout'
 import { fileIcon } from '../lib/fileIcons'
@@ -11,6 +12,8 @@ import { IconButton } from './ui'
 
 /** Markdown 渲染按需加载：marked + sanitizer 都在这个 chunk 里，不进首屏 */
 const MarkdownView = lazy(() => import('./preview/MarkdownView').then((m) => ({ default: m.MarkdownView })))
+/** Git 栏整包按需加载（store/git + 组件），不进首屏（Git管理-PRD §8） */
+const GitPanel = lazy(() => import('./git/GitPanel').then((m) => ({ default: m.GitPanel })))
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -28,14 +31,19 @@ export function PreviewRail(): React.JSX.Element | null {
   const width = useLayout((s) => s.previewRailWidth)
   const setRailWidth = useLayout((s) => s.setRailWidth)
   const togglePreviewRail = useLayout((s) => s.togglePreviewRail)
+  const tab = useLayout((s) => s.rightRailTab)
+  const gitEnabled = useConfig((s) => s.config?.settings.gitEnabled === true)
   const target = usePreview((s) => s.target)
 
   if (!visible) return null
+  // Git 关着时右栏就是原来的预览栏，没有页签条（Git管理-PRD §4.1）
+  const showGit = gitEnabled && tab === 'git'
 
   return (
     <aside
-      aria-label="文件预览"
+      aria-label={showGit ? 'Git' : '文件预览'}
       data-rail="preview"
+      data-right-tab={showGit ? 'git' : 'preview'}
       style={{ '--rail-w': `${width}px` } as React.CSSProperties}
       className="relative flex w-[var(--rail-w)] shrink-0 flex-col border-l border-line bg-panel"
     >
@@ -48,13 +56,63 @@ export function PreviewRail(): React.JSX.Element | null {
         side="left"
         testId="resize-preview-rail"
       />
-      <Header target={target} onClose={togglePreviewRail} />
-      <Body />
+      {gitEnabled && <TabStrip tab={showGit ? 'git' : 'preview'} onClose={togglePreviewRail} />}
+      {showGit ? (
+        <Suspense fallback={<p className="px-3 pt-3 text-[12px] text-ink-muted">加载中…</p>}>
+          <GitPanel />
+        </Suspense>
+      ) : (
+        <>
+          <Header target={target} onClose={gitEnabled ? undefined : togglePreviewRail} />
+          <Body />
+        </>
+      )}
     </aside>
   )
 }
 
-function Header({ target, onClose }: { target: { workspaceId: string; rel: string; name: string } | null; onClose: () => void }): React.JSX.Element {
+/** 右栏页签条：预览 / Git，方向键在两项之间切换；关闭按钮收起整个右栏 */
+function TabStrip({ tab, onClose }: { tab: RightRailTab; onClose: () => void }): React.JSX.Element {
+  const showRightTab = useLayout((s) => s.showRightTab)
+  const tabs: { id: RightRailTab; label: string }[] = [
+    { id: 'preview', label: '预览' },
+    { id: 'git', label: 'Git' }
+  ]
+  const onKey = (e: React.KeyboardEvent): void => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const next = tab === 'preview' ? 'git' : 'preview'
+    showRightTab(next)
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-right-tab-btn="${next}"]`)?.focus())
+  }
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line pr-1 pl-2">
+      <div role="tablist" aria-label="右栏" className="flex min-w-0 flex-1 items-center gap-0.5" onKeyDown={onKey}>
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={t.id === tab}
+            tabIndex={t.id === tab ? 0 : -1}
+            data-right-tab-btn={t.id}
+            onClick={() => showRightTab(t.id)}
+            className={`h-7 rounded-control px-2.5 text-[12px] transition-colors duration-150 ${
+              t.id === tab ? 'bg-raised font-semibold text-ink-strong' : 'text-ink-muted hover:bg-raised hover:text-ink-strong'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <IconButton label="关闭右栏" onClick={onClose}>
+        <X size={16} />
+      </IconButton>
+    </div>
+  )
+}
+
+function Header({ target, onClose }: { target: { workspaceId: string; rel: string; name: string } | null; onClose?: () => void }): React.JSX.Element {
   const openEditor = (): void => {
     if (!target) return
     void window.warp.fs
@@ -82,9 +140,11 @@ function Header({ target, onClose }: { target: { workspaceId: string; rel: strin
       <IconButton label="在资源管理器中显示" disabled={!target} onClick={reveal}>
         <ArrowSquareOut size={16} />
       </IconButton>
-      <IconButton label="关闭预览栏" onClick={onClose}>
-        <X size={16} />
-      </IconButton>
+      {onClose && (
+        <IconButton label="关闭预览栏" onClick={onClose}>
+          <X size={16} />
+        </IconButton>
+      )}
     </div>
   )
 }

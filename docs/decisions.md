@@ -404,3 +404,9 @@ UI 文档写的是空心方块。实际看下来，空心方块和复选框太�
 2026-11-05 · GitService 的 git 子进程固定加 `-c core.fsmonitor=false -c core.quotepath=false` 与 `GIT_OPTIONAL_LOCKS=0` | 仓库配置里的 `core.fsmonitor` 是任意命令，`git status` 会执行它，打开一个不受信任的仓库就等于运行它的代码，所以每条命令都在命令行上把它关掉（命令行 `-c` 优先于仓库配置，verify-git 用恶意配置实测）；quotepath 关掉免得中文路径被转义成八进制；agent 可能同时在同一仓库跑 git，status 不抢 `index.lock`。只认 PATH 里的 `git.exe`，不走 `git.cmd`（要经 cmd.exe）。simple-git 的 `allowUnsafeCustomBinary` / `allowUnsafeFsMonitor` 两个放行是因为：前者的字符校验拒绝 `C:/Program Files/...` 里的空格，路径来自主进程 PATH 查找、不来自渲染层；后者拦的正是我们用来关 fsmonitor 的 `-c core.fsmonitor=false`。
 
 2026-11-05 · git:probe 不返回仓库绝对路径 | 只给 `repoName`（仓库根目录名）和 `relativeDir`（工作区相对仓库根的子目录），与「路径不出主进程」一致；PRD §7 草案里的 `repoRoot` 按代码回写为 `repoName`。
+
+2026-11-06 · 丢弃改动两步走，主进程只认一次性 token | 丢弃会删未跟踪文件且不可恢复。只在渲染层确认的话，渲染层一旦被注入就能跳过确认直接删。改成 `git:discardPrepare` 先列出要丢的文件并发 60 秒一次性 token，`git:discard` 只收 token，文件列表以 prepare 时主进程算出的为准；只接受未暂存组、冲突文件不能丢。
+
+2026-11-06 · git diff 固定加 `--no-ext-diff --no-textconv` | 仓库配置的 `diff.external` 和 `diff.<driver>.textconv` 都是任意命令，和 fsmonitor 一样打开不受信任的仓库就会执行。关掉后二进制文件按 git 原生判定显示为「二进制」，损失可以接受。
+
+2026-11-06 · Git 栏与预览栏共用右栏槽位，不新开第四根栏 | 共用宽度与显隐，`railsOf()` 收让顺序不用加一级；新增 `Layout.rightRailTab` 记住页签。Git 开关关着时右栏和原来的预览栏完全一样（没有页签条）。单击目录栏文件总是切回「预览」页签；Git 页签下 `Ctrl+Shift+G` 收起右栏，否则切到 Git。GitPanel 与 store/git 整包按需加载（25KB），首屏只多页签条和标题栏按钮。

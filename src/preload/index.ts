@@ -10,6 +10,8 @@ import type {
   FileImagePreview,
   FileTextPreview,
   GitProbe,
+  GitDiff,
+  GitDiscardPlan,
   GitStatus,
   HistoryDetail,
   HistoryExportFormat,
@@ -106,7 +108,17 @@ const api = {
     branch: (workspaceId: string): Promise<string | null> => ipcRenderer.invoke(CH.gitBranch, { workspaceId }),
     /** Git 管理（Git管理-PRD）：settings.gitEnabled 为 false 时 probe 返回 disabled，其它调用直接拒绝 */
     probe: (workspaceId: string): Promise<GitProbe> => ipcRenderer.invoke(CH.gitProbe, { workspaceId }),
-    status: (workspaceId: string): Promise<GitStatus> => ipcRenderer.invoke(CH.gitStatus, { workspaceId })
+    status: (workspaceId: string): Promise<GitStatus> => ipcRenderer.invoke(CH.gitStatus, { workspaceId }),
+    /** paths 相对仓库根；空数组 = 全部 */
+    stage: (workspaceId: string, paths: string[]): Promise<void> => ipcRenderer.invoke(CH.gitStage, { workspaceId, paths }),
+    unstage: (workspaceId: string, paths: string[]): Promise<void> => ipcRenderer.invoke(CH.gitUnstage, { workspaceId, paths }),
+    /** 丢弃两步走：先拿确认用的文件列表与一次性 token，用户确认后再用 token 执行 */
+    discardPrepare: (workspaceId: string, paths: string[]): Promise<GitDiscardPlan> =>
+      ipcRenderer.invoke(CH.gitDiscardPrepare, { workspaceId, paths }),
+    discard: (workspaceId: string, token: string): Promise<void> => ipcRenderer.invoke(CH.gitDiscard, { workspaceId, token }),
+    diff: (workspaceId: string, path: string, staged: boolean): Promise<GitDiff> => ipcRenderer.invoke(CH.gitDiff, { workspaceId, path, staged }),
+    commit: (workspaceId: string, summary: string, description: string): Promise<{ hash: string }> =>
+      ipcRenderer.invoke(CH.gitCommit, { workspaceId, summary, description })
   },
   agent: {
     list: (): Promise<AgentInfo[]> => ipcRenderer.invoke(CH.agentList),
