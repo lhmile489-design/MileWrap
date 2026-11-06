@@ -216,7 +216,8 @@ app.whenReady().then(() => {
   const files = new FileTreeService(config, (id) => sendToRenderer(CH.fsChanged, id))
   const preview = new FilePreviewService(files)
   const git = new GitInfoService(config)
-  const gitOps = new GitService(config)
+  // 远端进度推送一律走 sendToRenderer（窗口销毁后还在推不会抛错）
+  const gitOps = new GitService(config, (p) => sendToRenderer(CH.gitProgress, p), join(app.getPath('appData'), 'mile-warp'))
   const layout = new LayoutStore(join(app.getPath('appData'), 'mile-warp'))
   sessions.setCellResolver((id) => {
     const l = layout.get()
@@ -382,6 +383,18 @@ app.whenReady().then(() => {
   handle(CH.gitDiscard, (arg) => gitOps.discard(arg))
   handle(CH.gitDiff, (arg) => gitOps.diff(arg))
   handle(CH.gitCommit, (arg) => gitOps.commit(arg))
+  handle(CH.gitBranches, (arg) => gitOps.branches(arg))
+  handle(CH.gitCheckout, (arg) => gitOps.checkout(arg))
+  handle(CH.gitCreateBranch, (arg) => gitOps.createBranch(arg))
+  handle(CH.gitFetch, (arg) => gitOps.fetch(arg))
+  handle(CH.gitPull, (arg) => gitOps.pull(arg))
+  handle(CH.gitPush, (arg) => gitOps.push(arg))
+  handle(CH.gitCancel, (arg) => gitOps.cancel(arg))
+  handle(CH.gitLog, (arg) => gitOps.log(arg))
+  handle(CH.gitCommitDetail, (arg) => gitOps.commitDetail(arg))
+  handle(CH.gitCommitFileDiff, (arg) => gitOps.commitFileDiff(arg))
+  handle(CH.gitRisk, (arg) => gitOps.risk(arg))
+  handle(CH.gitTrust, (arg) => gitOps.trustRepo(arg))
   handle(CH.shellOpenPath, async (arg) => {
     const err = await shell.openPath(workspaceDir(arg))
     if (err) throw new Error(err)

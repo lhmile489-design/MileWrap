@@ -34,6 +34,23 @@ export const CH = {
   gitDiscard: 'git:discard',
   gitDiff: 'git:diff',
   gitCommit: 'git:commit',
+  /** G2：分支与远端 */
+  gitBranches: 'git:branches',
+  gitCheckout: 'git:checkout',
+  gitCreateBranch: 'git:createBranch',
+  gitFetch: 'git:fetch',
+  gitPull: 'git:pull',
+  gitPush: 'git:push',
+  gitCancel: 'git:cancel',
+  /** 主进程推送：远端操作进度 */
+  gitProgress: 'git:progress',
+  /** G3：历史与提交详情 */
+  gitLog: 'git:log',
+  gitCommitDetail: 'git:commitDetail',
+  gitCommitFileDiff: 'git:commitFileDiff',
+  /** 仓库里会执行命令的配置 / 钩子：先查，用户确认后按指纹记住 */
+  gitRisk: 'git:risk',
+  gitTrust: 'git:trust',
   shellOpenPath: 'shell:openPath',
   shellOpenExternalTerminal: 'shell:openExternalTerminal',
 

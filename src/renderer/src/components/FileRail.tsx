@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { ArrowClockwise, ArrowSquareOut, CaretLineLeft, CaretRight } from '@phosphor-icons/react'
 import type { FileEntry } from '@shared/types'
 import { useBranches } from '../store/branches'
+import { MARK_LABEL, useGitMarks } from '../store/gitMarks'
 import { useConfig } from '../store/config'
 import { EMPTY_TREE, joinRel, useFileTree } from '../store/fileTree'
 import { usePreview } from '../store/preview'
@@ -16,6 +17,9 @@ import { fileMenu } from './fileActions'
 import { beginFileDrag } from './rail/drag'
 import { RailResizer } from './Splitter'
 import { IconButton } from './ui'
+
+/** 改动标记颜色：与 Git 栏徽标同一套信号色；字母本身就是文字，不只靠颜色 */
+const MARK_TONE = { M: 'text-warn', A: 'text-live', D: 'text-fault', R: 'text-accent', U: 'text-idle', '!': 'text-fault' } as const
 
 function lastSegment(p: string): string {
   const parts = p.split(/[\\/]+/).filter(Boolean)
@@ -66,6 +70,13 @@ export function FileRail(): React.JSX.Element | null {
     const t = id ? s.trees[id] : undefined
     return t ? Object.keys(t.open).filter((k) => t.open[k]).sort().join('\n') : ''
   })
+  // 目录栏改动标记（Git管理-PRD G-18）：总开关打开时切到工作区读一次；Git 栏开着时由它刷新后写入
+  const gitEnabled = useConfig((s) => s.config?.settings.gitEnabled === true)
+  useEffect(() => {
+    if (!id) return
+    if (gitEnabled && visible) void useGitMarks.getState().load(id)
+    else if (!gitEnabled) useGitMarks.getState().clear(id)
+  }, [id, gitEnabled, visible])
   const stale = useFileTree((s) => Boolean(id && s.stale[id]))
   useEffect(() => {
     if (!visible || !id) return
@@ -115,6 +126,7 @@ export function FileRail(): React.JSX.Element | null {
             if (!workspace) return
             refresh(workspace.id)
             refreshBranch(workspace.id)
+            if (gitEnabled) void useGitMarks.getState().load(workspace.id, true)
           }}
         >
           <ArrowClockwise size={16} />
@@ -229,6 +241,8 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
   // 正在预览的文件：左侧强调线 + Eye（不只靠颜色，UI设计约束 §6）
   const previewing = usePreview((s) => s.target !== null && s.target.workspaceId === workspaceId && s.target.rel === rel)
   const root = rel === ''
+  // 改动标记：文件按路径标；目录不汇总，但整个未跟踪的目录 git 只报一条 `dir/`，键就是目录本身，照样标 U
+  const mark = useGitMarks((s) => (root ? undefined : s.marks[workspaceId]?.[rel]))
   const Icon = fileIcon(name, kind, open, link)
   const dimmed = isDimmed(name)
 
@@ -276,6 +290,17 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
         <Icon size={16} aria-hidden="true" className={`shrink-0 ${dimmed || link ? 'text-ink-faint' : 'text-ink-muted'}`} />
         <span className={`truncate text-[13px] ${root ? 'font-semibold' : ''} ${dimmed || link ? 'text-ink-faint' : ''}`}>{name}</span>
         {previewing && <PreviewEye size={16} aria-hidden="true" className="ml-auto shrink-0 text-accent" />}
+        {mark && (
+          <span
+            role="img"
+            aria-label={`Git：${MARK_LABEL[mark]}`}
+            title={`Git：${MARK_LABEL[mark]}`}
+            data-git-mark={mark}
+            className={`${previewing ? '' : 'ml-auto'} shrink-0 font-mono text-[12px] font-bold ${MARK_TONE[mark]}`}
+          >
+            {mark}
+          </span>
+        )}
       </div>
       {open && <Children workspaceId={workspaceId} rel={rel} depth={depth + 1} />}
     </div>

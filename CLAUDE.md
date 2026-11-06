@@ -35,7 +35,7 @@ npx electron scripts/verify-m5-settings.cjs  # 设置 / 主题 / 快捷键 / 命
 npx electron scripts/verify-upgrade.cjs      # 升级建议各项（迁移 / 活动 / 自定义 agent / 路径 / 预设 / 广播 / 有更新 / 崩溃重载）
 npx electron scripts/verify-preview.cjs      # 目录栏文件预览（IPC 上限与越界 / md sanitizer / 相对图片 / Esc / 切工作区）
 npx electron scripts/verify-skills.cjs       # Skills 管理（扫描 / 详情 / 卸载 / 跨 agent 安装 / 冲突 .bak / 弹窗与搜索）
-npx electron scripts/verify-git.cjs          # Git 管理（总开关 / probe / status / 暂存 / diff / 丢弃 token / 提交与 hooks / 右栏 Git 页签）
+npx electron scripts/verify-git.cjs          # Git 管理（总开关 / probe / status / 暂存 / diff / 丢弃 token / 提交与 hooks / 右栏 Git 页签 / 分支 / fetch pull push / ext:: 拦截）
 node scripts/probe-skills.cjs                # 本机 agent skill 目录探针（只读，M0 定稿目录映射表用）
 npm run verify:all                           # 依次跑全部 harness，日志存 %TEMP%\warp-verify\（M1 需要 PATH 里有 codex）
 npx electron scripts/verify-layout.cjs       # 控件文字不折行、不溢出（多种宽度与格数、各弹窗菜单）
@@ -212,6 +212,12 @@ README.md        面向使用者的说明（功能、快捷键、数据位置、
 - `npx electron scripts/verify-git.cjs`（45 项）：默认关零 git、设置页开关落盘、远端名校形、probe（子目录 / 非仓库 / 越权 id）、status（中文空格路径、重命名带 oldPath、同文件暂存+未暂存两行、删除、detached、远端）、恶意 `core.fsmonitor` 不被执行。首屏 914KB。
 - G1 完成：右栏与预览共用槽位，Git 开关打开时出现「预览 / Git」页签条（`Layout.rightRailTab` 持久化，`showRightTab` / `toggleGitRail`）；入口标题栏按钮、`Ctrl+Shift+G`、命令面板，都只在总开关打开时出现。`components/git/GitPanel.tsx` + `store/git.ts` 整包 lazy（25KB chunk）：改动列表（已暂存 / 未暂存、字母徽标 + 文字标签）、暂存 / 取消 / 丢弃、diff、提交框（草稿 `localStorage` `warp.commitDraft.<id>`）、自动刷新（打开、窗口焦点、会话从对话中转安静，节流 2 秒）。IPC `git:stage / unstage / discardPrepare / discard / diff / commit`；丢弃两步走（prepare 发 60 秒一次性 token，discard 只收 token）；diff 加 `--no-ext-diff --no-textconv`；提交照跑 hooks，失败把输出原样带回。
 - `verify-git.cjs` 105 项（G0 45 + G1 IPC 与渲染层）；首屏 916KB。
-- 下一步 G2：分支菜单、切换 / 新建、fetch / pull / push、进度与取消。
+- G2 完成：栏头分支 pill 点开分支菜单（只列本地分支，可搜索，底部新建并切换）；fetch / pull / push 按钮组带落后 / 领先数，没有远端整组禁用；进行中显示中文阶段 + 百分比，1.5 秒后出现「取消」。IPC `git:branches / checkout / createBranch / fetch / pull / push / cancel` + 主进程推送 `git:progress`（100ms 节流）；远端操作按仓库根互斥、5 分钟超时、AbortController 取消。分支名逐个校形并再过 `git check-ref-format`；push 无上游时 `-u <gitDefaultRemote> <分支>`；pull 未配 `pull.rebase` 时补 `--no-rebase`，冲突返回 `conflict` 不抛错；远端子进程固定 `GIT_ALLOW_PROTOCOL=file:git:http:https:ssh`（挡 `ext::` 任意命令传输）。
+- G2 时 `verify-git.cjs` 146 项（+ G2 IPC 与渲染层：分支切换 / 新建 / 非法名、push 自动设上游、进度推送、分叉 push 被拒、pull 冲突、`ext::` 不执行、分支菜单与远端按钮）。
+- G3 完成：`components/git/GitWorkbench.tsx`（lazy chunk 15.7KB）「改动」页（左列表 + 提交框，右 diff）与「历史」页（单列时间线，每页 50 条「加载更多」，提交详情含改动文件与该提交里的 diff、复制完整哈希）；入口 Git 栏头「展开」、命令面板「Git 提交历史」。IPC `git:log / commitDetail / commitFileDiff`（哈希经 `rev-parse` 解析、`-z` 读中文路径、合并提交按第一父提交）。G-05 格头分支 pill 在 Git 开启时是按钮；G-06 工作区右键「Git…」（`actions.openGitFor`）；G-17 改动文件右键「预览文件 / 在目录栏中定位 / 在资源管理器中显示」；G-18 目录栏改动标记 `store/gitMarks.ts`（首屏，复用 Git 栏那次 status；未跟踪目录也标 U）。
+- 对抗审查（2026-11-06，16 条属实 / 2 条驳回）已修：Esc 先关最上层浮层（`overlayOpen()`）、远端操作中禁用暂存 / 丢弃 / 提交 / 切分支、工作台跟随会话栏选中并在关闭时还原 Git 栏视图、进度订阅移到 store 模块级、取消按仓库根、`remote:` 阶段名、取消后不误报冲突、rebase 冲突单独提示、切分支后刷新格头 pill、历史按 `status.head` 判断重读、标记手动刷新不节流、分支菜单与历史列表方向键导航。
+- 风险确认（审查高危项，decisions 同日）：`services/gitRisk.ts` 只读扫描仓库级（local / worktree）配置与钩子目录，命中 `core.hooksPath`、`filter.*.clean/smudge/process`、`merge.*.driver`、`remote.*.receivepack/uploadpack`、`core.sshCommand/gitProxy/askpass/editor`、`sequence.editor`、`credential.*helper`、`gpg.*program` 或非 `.sample` 钩子时，`GitService.repo()` 拒绝除 probe / risk / trust / cancel 外的一切命令；Git 栏显示确认面板，用户确认后按内容指纹（sha256）记进 `<appData>/mile-warp/git-trust.json`，内容一变重新问。IPC `git:risk / git:trust`（trust 带回指纹、主进程重扫一致才记）。
+- `verify-git.cjs` 211 项（+ G3 历史 / 详情 / 提交内 diff、G-17 / G-18、工作台、右键与格头 pill、7h 风险确认）；全量 `verify:all` 17/18（唯一失败是 m0 探针等真实 codex 进主界面超时，与 Git 无关）；首屏 919KB。
+- 未做：「在目录栏中定位」父目录超过 300 项时定位不到（低优先级）；版本号未改；真实 GitHub 远端未人工验证。
 
 更新进度时改本节。

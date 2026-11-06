@@ -410,3 +410,17 @@ UI 文档写的是空心方块。实际看下来，空心方块和复选框太�
 2026-11-06 · git diff 固定加 `--no-ext-diff --no-textconv` | 仓库配置的 `diff.external` 和 `diff.<driver>.textconv` 都是任意命令，和 fsmonitor 一样打开不受信任的仓库就会执行。关掉后二进制文件按 git 原生判定显示为「二进制」，损失可以接受。
 
 2026-11-06 · Git 栏与预览栏共用右栏槽位，不新开第四根栏 | 共用宽度与显隐，`railsOf()` 收让顺序不用加一级；新增 `Layout.rightRailTab` 记住页签。Git 开关关着时右栏和原来的预览栏完全一样（没有页签条）。单击目录栏文件总是切回「预览」页签；Git 页签下 `Ctrl+Shift+G` 收起右栏，否则切到 Git。GitPanel 与 store/git 整包按需加载（25KB），首屏只多页签条和标题栏按钮。
+
+2026-11-06 · 远端 git 子进程固定 `GIT_ALLOW_PROTOCOL=file:git:http:https:ssh` | 仓库配置可以把远端写成 `ext::<任意命令>` 并配 `protocol.ext.allow=always`，fetch / push 时就会执行它（探针实测 pwned）。用环境变量而不是 `-c protocol.*.allow`：simple-git 会拦后者，要放行 `allowUnsafeProtocolOverride`；环境变量优先于仓库配置，探针实测 `ext` 被拒、命令未执行。
+
+2026-11-06 · pull 未配 `pull.rebase` 时补 `--no-rebase`，冲突不当错误 | git 2.27+ 在分叉时若没配 `pull.rebase` 直接报错、不合并，用户在栏里点「拉取」什么都不会发生；补 `--no-rebase` 等于老默认（merge），配过就尊重用户。合并冲突返回 `{ conflict: true }`，改动列表出冲突横条，解决交给编辑器或 agent（PRD G-25）。
+
+2026-11-06 · 分支菜单只列本地分支，首期不做删除 / 合并 / 远端分支检出 | 对齐源项目实际 UI 与 PRD G-26；需要检出远端分支时先 fetch，再在终端里 `git switch <name>`（git 会自动建跟踪分支）。
+
+2026-11-06 · 仓库里会执行命令的配置与钩子：先检测、用户确认信任后才执行（审查高危项，米乐选方案 1） | agent 能改自己工作区的 `.git/config` 与 `.git/hooks`；用户点「拉取 / 推送 / 切分支」时，`filter.*.smudge`、`remote.*.receivepack`、`core.hooksPath` 钩子、`core.sshCommand` 都会在主进程里执行（审查实测）。PRD Q6 只同意过提交时跑钩子。三个方案：检测并确认 / 命令行强制关掉（会破坏 Git LFS 等正常用法）/ 接受现状。选检测并确认：只读扫描 local / worktree 级配置与钩子目录（不跑仓库里的任何东西），命中就拒绝除 probe / risk / trust / cancel 外的命令；Git 栏列出每一项与执行时机，用户确认后按内容指纹记住，内容一变重问。全局 / 系统级配置是用户自己写的，不管。正常仓库没有这些键，不多一步。探针实测 status / diff / add 也会执行 clean 过滤器，所以 status 同样要先过确认；simple-git 拦 `-c filter.*=`，用不了命令行覆盖。
+
+2026-11-06 · Git 工作台与 Git 栏共用 store 的 view，工作台关闭时还原 | 两处都读同一份改动列表与 diff，各存一份要双向同步；共用一份、工作台挂载时记下 Git 栏原视图、卸载时还原，代码最少。
+
+2026-11-06 · 历史页按 `status.head`（HEAD 完整哈希）判断重读 | 原来用 `分支:领先:落后:文件数`，暂存会误触发重读，没有上游的分支上外部提交又感知不到。status 多返回一个 head，变了才重读第一页。
+
+2026-11-06 · 目录栏改动标记放首屏、复用 Git 栏那次 status | 体积很小（一个 store + 节点上一个字母）；Git 栏开着时由它写入，不另跑命令；没开时目录栏自己读一次，同一工作区 2 秒节流，手动刷新不节流。

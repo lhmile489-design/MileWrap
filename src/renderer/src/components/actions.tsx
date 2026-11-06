@@ -1,4 +1,4 @@
-import { ArrowClockwise, ArrowCounterClockwise, ArrowSquareIn, Copy, FolderOpen, PencilSimple, Plus, SquareSplitHorizontal, TerminalWindow, Trash, X } from '@phosphor-icons/react'
+import { ArrowClockwise, ArrowCounterClockwise, ArrowSquareIn, Copy, FolderOpen, GitBranch, PencilSimple, Plus, SquareSplitHorizontal, TerminalWindow, Trash, X } from '@phosphor-icons/react'
 import type { Cells, Group, LayoutPreset, SessionMeta, Workspace } from '@shared/types'
 import { useConfig } from '../store/config'
 import { cellOf, useLayout, visibleCount } from '../store/layout'
@@ -300,6 +300,13 @@ function cellChoices(): number[] {
   return n > 1 ? Array.from({ length: n }, (_, i) => i) : []
 }
 
+/** Git管理-PRD G-05 / G-06：把右栏切到 Git 页签并定位到这个工作区（Git 栏跟随会话栏选中） */
+export function openGitFor(workspaceId: string): void {
+  if (useConfig.getState().config?.settings.gitEnabled !== true) return
+  useSessions.getState().selectWorkspace(workspaceId)
+  useLayout.getState().showRightTab('git')
+}
+
 /** 工作区右键菜单（PRD W-11） */
 export function workspaceMenu(w: Workspace): MenuItem[] {
   const list = sessionsOf(w.id)
@@ -315,7 +322,12 @@ export function workspaceMenu(w: Workspace): MenuItem[] {
     items.push({ label: '重命名会话', icon: <PencilSimple size={16} />, onSelect: () => renameSessionPrompt(list[0]) })
   }
   items.push(
-    { label: '历史会话…', icon: <ArrowCounterClockwise size={16} />, onSelect: () => useUi.getState().openHistory(w.cwd) },
+    { label: '历史会话…', icon: <ArrowCounterClockwise size={16} />, onSelect: () => useUi.getState().openHistory(w.cwd) }
+  )
+  if (useConfig.getState().config?.settings.gitEnabled === true) {
+    items.push({ label: 'Git…', icon: <GitBranch size={16} />, onSelect: () => openGitFor(w.id) })
+  }
+  items.push(
     { kind: 'separator' },
     { label: '在资源管理器中打开', icon: <FolderOpen size={16} />, onSelect: () => run(window.warp.shell.openPath(w.id), '打开失败') },
     {

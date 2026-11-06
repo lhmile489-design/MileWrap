@@ -10,6 +10,12 @@ import type {
   FileImagePreview,
   FileTextPreview,
   GitProbe,
+  GitBranch,
+  GitCommitDetail,
+  GitLogPage,
+  GitProgress,
+  GitRisk,
+  GitRemoteResult,
   GitDiff,
   GitDiscardPlan,
   GitStatus,
@@ -118,7 +124,25 @@ const api = {
     discard: (workspaceId: string, token: string): Promise<void> => ipcRenderer.invoke(CH.gitDiscard, { workspaceId, token }),
     diff: (workspaceId: string, path: string, staged: boolean): Promise<GitDiff> => ipcRenderer.invoke(CH.gitDiff, { workspaceId, path, staged }),
     commit: (workspaceId: string, summary: string, description: string): Promise<{ hash: string }> =>
-      ipcRenderer.invoke(CH.gitCommit, { workspaceId, summary, description })
+      ipcRenderer.invoke(CH.gitCommit, { workspaceId, summary, description }),
+    /** G2：只列本地分支；切换 / 新建只收分支名，主进程校形 */
+    branches: (workspaceId: string): Promise<GitBranch[]> => ipcRenderer.invoke(CH.gitBranches, { workspaceId }),
+    checkout: (workspaceId: string, branch: string): Promise<void> => ipcRenderer.invoke(CH.gitCheckout, { workspaceId, branch }),
+    createBranch: (workspaceId: string, name: string): Promise<void> => ipcRenderer.invoke(CH.gitCreateBranch, { workspaceId, name }),
+    fetch: (workspaceId: string): Promise<GitRemoteResult> => ipcRenderer.invoke(CH.gitFetch, { workspaceId }),
+    pull: (workspaceId: string): Promise<GitRemoteResult> => ipcRenderer.invoke(CH.gitPull, { workspaceId }),
+    push: (workspaceId: string): Promise<GitRemoteResult> => ipcRenderer.invoke(CH.gitPush, { workspaceId }),
+    cancel: (workspaceId: string): Promise<void> => ipcRenderer.invoke(CH.gitCancel, { workspaceId }),
+    /** G3 历史：当前 HEAD，offset 分页，limit ≤ 100 */
+    log: (workspaceId: string, offset: number, limit = 50): Promise<GitLogPage> => ipcRenderer.invoke(CH.gitLog, { workspaceId, offset, limit }),
+    commitDetail: (workspaceId: string, hash: string): Promise<GitCommitDetail> => ipcRenderer.invoke(CH.gitCommitDetail, { workspaceId, hash }),
+    commitFileDiff: (workspaceId: string, hash: string, path: string, oldPath?: string): Promise<GitDiff> =>
+      ipcRenderer.invoke(CH.gitCommitFileDiff, { workspaceId, hash, path, oldPath }),
+    /** 仓库里会执行命令的配置 / 钩子：未确认时返回风险项，已确认或没有返回 null */
+    risk: (workspaceId: string): Promise<GitRisk | null> => ipcRenderer.invoke(CH.gitRisk, { workspaceId }),
+    /** 确认信任：带回 risk 给的指纹，主进程重扫一致才记下 */
+    trust: (workspaceId: string, fingerprint: string): Promise<void> => ipcRenderer.invoke(CH.gitTrust, { workspaceId, fingerprint }),
+    onProgress: (cb: (p: GitProgress) => void): Off => subscribe(CH.gitProgress, cb)
   },
   agent: {
     list: (): Promise<AgentInfo[]> => ipcRenderer.invoke(CH.agentList),

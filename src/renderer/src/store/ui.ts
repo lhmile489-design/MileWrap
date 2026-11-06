@@ -40,6 +40,10 @@ type UiState = {
   skillsOpen: boolean
   openSkills: () => void
   closeSkills: () => void
+  /** Git 工作台大弹窗（Git管理-PRD G-30）；null = 关闭，否则是打开的页签 */
+  gitWorkbench: 'changes' | 'history' | null
+  openGitWorkbench: (tab?: 'changes' | 'history') => void
+  closeGitWorkbench: () => void
   setExpanded: (workspaceId: string, open: boolean) => void
   openCreate: (groupId?: string | null, prefill?: { cwd: string; name: string }) => void
   openEdit: (id: string) => void
@@ -70,6 +74,9 @@ export const useUi = create<UiState>((set, get) => ({
   skillsOpen: false,
   openSkills: () => set({ skillsOpen: true, paletteOpen: false }),
   closeSkills: () => set({ skillsOpen: false }),
+  gitWorkbench: null,
+  openGitWorkbench: (tab = 'changes') => set({ gitWorkbench: tab, paletteOpen: false }),
+  closeGitWorkbench: () => set({ gitWorkbench: null }),
   openSettings: (tab = 'appearance') => set({ settingsTab: tab, paletteOpen: false }),
   closeSettings: () => set({ settingsTab: null }),
   setPaletteOpen: (open) => set({ paletteOpen: open }),

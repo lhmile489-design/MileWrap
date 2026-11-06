@@ -208,6 +208,11 @@ export type GitProbe =
   | { available: false; reason: 'disabled' | 'no-git' | 'not-repo' }
   | { available: false; reason: 'error'; message: string }
 
+/** 仓库里会执行任意命令的一项配置或钩子（审查 2026-11-06 高危项） */
+export type GitRiskItem = { kind: 'config' | 'hook'; name: string; detail: string; why: string }
+/** git:risk 的返回值：未确认信任（或确认后内容变了）时给出；fingerprint 确认时原样带回 */
+export type GitRisk = { fingerprint: string; items: GitRiskItem[] }
+
 export type GitFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked' | 'conflict'
 
 /** 改动列表的一行。path / oldPath 相对仓库根，斜杠统一为 / */
@@ -228,6 +233,8 @@ export type GitStatus = {
   /** 上游分支名（如 origin/main），没有为 null */
   upstream: string | null
   hasRemote: boolean
+  /** HEAD 的完整哈希；还没有提交时为 null。历史页据此判断要不要重读 */
+  head: string | null
   files: GitFile[]
 }
 
@@ -239,6 +246,51 @@ export type GitDiff = { hunks: GitDiffHunk[]; binary: boolean; tooLarge: boolean
 
 /** git:discardPrepare 的返回值：确认框列出的文件；token 一次性、60 秒内有效 */
 export type GitDiscardPlan = { token: string; files: { path: string; untracked: boolean }[] }
+
+/** git:branches 的一项（只列本地分支，G-20） */
+export type GitBranch = {
+  name: string
+  current: boolean
+  /** 上游（如 origin/main），没有为 null */
+  upstream: string | null
+  subject: string
+  /** 最近一次提交时间（毫秒） */
+  time: number
+}
+
+export type GitRemoteOp = 'fetch' | 'pull' | 'push'
+
+/** fetch / pull / push 的返回值：pull 产生冲突时 conflict 为 true，不抛错（G-25） */
+export type GitRemoteResult = { conflict: boolean; rebase?: boolean }
+
+/** git:progress 推送（G-23）：stage 是 git 进度行的首词（receiving / writing …），percent 0–100 */
+export type GitProgress = { workspaceId: string; op: GitRemoteOp; stage: string; percent: number }
+
+/** git:log 的一条（G-31）。time 毫秒 */
+export type GitCommit = {
+  hash: string
+  shortHash: string
+  subject: string
+  author: string
+  time: number
+  /** 指向这个提交的分支 / 标签短名（%D 去掉 HEAD ->） */
+  refs: string[]
+}
+
+export type GitLogPage = { commits: GitCommit[]; hasMore: boolean }
+
+/** git:commitDetail 的一个文件；path / oldPath 相对仓库根 */
+export type GitCommitFile = {
+  path: string
+  oldPath?: string
+  status: 'added' | 'modified' | 'deleted' | 'renamed'
+  added: number
+  removed: number
+  binary: boolean
+}
+
+/** git:commitDetail 的返回值（G-32） */
+export type GitCommitDetail = GitCommit & { body: string; email: string; parents: string[]; files: GitCommitFile[] }
 
 /** fs:readImage 的返回值：最长边超 1600px 由主进程等比缩放后的 data URL */
 export type FileImagePreview = {

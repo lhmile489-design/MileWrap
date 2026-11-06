@@ -21,6 +21,7 @@ import { focusCell, showSession } from './components/actions'
 import { useRestore } from './store/restore'
 import { useActivity } from './store/activity'
 import { ShortcutsSheet } from './components/ShortcutsSheet'
+import { overlayOpen } from './lib/useOverlay'
 import { confirm } from './components/ConfirmDialog'
 
 /**
@@ -37,6 +38,8 @@ const HistoryDialog = lazy(() => loadHistory().then((m) => ({ default: m.History
 const SkillsDialog = lazy(() => loadSkills().then((m) => ({ default: m.SkillsDialog })))
 const CommandPalette = lazy(() => loadPalette().then((m) => ({ default: m.CommandPalette })))
 const WorkspaceDialog = lazy(() => loadWorkspaceDialog().then((m) => ({ default: m.WorkspaceDialog })))
+/** Git 工作台（Git管理-PRD G-30）：整包按需加载，不进首屏 */
+const GitWorkbench = lazy(() => import('./components/git/GitWorkbench').then((m) => ({ default: m.GitWorkbench })))
 
 export function preloadDialogs(): void {
   void loadSettings()
@@ -60,6 +63,8 @@ function onShortcut(e: KeyboardEvent): void {
   if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
     // 弹窗自己吃 Esc（浏览器默认行为不关 dialog），预览栏开着才拦
     if (document.querySelector('dialog[open]')) return
+    // 工作台、分支菜单等浮层开着时 Esc 归最上层浮层（审查 2026-11-06）
+    if (overlayOpen()) return
     const p = usePreview.getState()
     if (p.target) {
       p.close()
@@ -151,6 +156,8 @@ export default function App(): React.JSX.Element {
   const paletteOpen = useUi((s) => s.paletteOpen)
   const historyOpen = useUi((s) => s.history !== null)
   const skillsOpen = useUi((s) => s.skillsOpen)
+  const workbenchOpen = useUi((s) => s.gitWorkbench !== null)
+  const gitEnabled = useConfig((s) => s.config?.settings.gitEnabled === true)
 
   useEffect(() => {
     void loadConfig()
@@ -332,6 +339,7 @@ export default function App(): React.JSX.Element {
       <Suspense fallback={null}>{paletteOpen && <CommandPalette />}</Suspense>
       <Suspense fallback={null}>{historyOpen && <HistoryDialog />}</Suspense>
       <Suspense fallback={null}>{skillsOpen && <SkillsDialog />}</Suspense>
+      <Suspense fallback={null}>{workbenchOpen && gitEnabled && <GitWorkbench />}</Suspense>
       <PromptHost />
       <RestoreDialog />
       <QuitDialog />

@@ -1,16 +1,40 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowsClockwise, ArrowUUpLeft, CaretDown, CaretRight, Check, DotsThree, GitBranch, Minus, Plus, Sparkle, Warning } from '@phosphor-icons/react'
-import type { GitDiff, GitFile, GitFileStatus } from '@shared/types'
+import {
+  ArrowLeft,
+  ArrowLineDown,
+  ArrowLineUp,
+  ArrowsClockwise,
+  ArrowsOut,
+  ArrowUUpLeft,
+  CaretDown,
+  CaretRight,
+  Check,
+  CloudArrowDown,
+  DotsThree,
+  GitBranch,
+  Minus,
+  Plus,
+  Sparkle,
+  Warning
+} from '@phosphor-icons/react'
+import type { GitBranch as GitBranchInfo, GitDiff, GitFile, GitFileStatus, GitRisk } from '@shared/types'
+import { useOverlay } from '../../lib/useOverlay'
 import { useGit } from '../../store/git'
 import { useSessions } from '../../store/sessions'
 import { useActivity } from '../../store/activity'
 import { useConfig } from '../../store/config'
+import { useFileTree } from '../../store/fileTree'
+import { railsOf, useLayout } from '../../store/layout'
+import { usePreview } from '../../store/preview'
+import { useUi } from '../../store/ui'
+import { toWorkspaceRel } from '../../store/gitMarks'
+import { notifyError } from '../ConfirmDialog'
 import { errorText } from '../../lib/errors'
 import { openMenu, openMenuAt, type MenuItem } from '../Menu'
 import { IconButton, Button, WorkspaceIcon } from '../ui'
 
 /** 状态徽标：字母 + 信号色 + title 文字，不只靠颜色（UI设计约束 §6） */
-const BADGE: Record<GitFileStatus, { letter: string; label: string; tone: string }> = {
+export const BADGE: Record<GitFileStatus, { letter: string; label: string; tone: string }> = {
   added: { letter: 'A', label: '新增', tone: 'text-live border-live' },
   modified: { letter: 'M', label: '修改', tone: 'text-warn border-warn' },
   deleted: { letter: 'D', label: '删除', tone: 'text-fault border-fault' },
@@ -21,8 +45,9 @@ const BADGE: Record<GitFileStatus, { letter: string; label: string; tone: string
 
 const DRAFT_KEY = (id: string): string => `warp.commitDraft.${id}`
 const EMPTY_FILES: GitFile[] = []
+const EMPTY_BRANCHES: GitBranchInfo[] = []
 
-function splitPath(p: string): { name: string; dir: string } {
+export function splitPath(p: string): { name: string; dir: string } {
   const i = p.lastIndexOf('/')
   return i < 0 ? { name: p, dir: '' } : { name: p.slice(i + 1), dir: p.slice(0, i) }
 }
@@ -67,6 +92,9 @@ export function GitPanel(): React.JSX.Element {
     })
   }, [])
 
+  // 远端操作进度（G-23）：主进程推送，store 按工作区与操作过滤
+  // 远端进度订阅在 store/git.ts 模块级：Git 栏收起、只开工作台时也不丢（审查 2026-11-06）
+
   if (!workspaceId) {
     return <Empty icon={<GitBranch size={20} />} title="没有选中工作区" body="在会话栏选一个工作区，这里显示它所在仓库的改动" />
   }
@@ -104,29 +132,323 @@ function Header(): React.JSX.Element {
         <IconButton label="刷新" disabled={loading} onClick={() => void refresh({ force: true })}>
           <ArrowsClockwise size={16} className={loading ? 'animate-spin motion-reduce:animate-none' : ''} />
         </IconButton>
+        {/* G-30：宽屏看 diff、翻历史 */}
+        <IconButton label="展开 Git 工作台" disabled={!repo} onClick={() => useUi.getState().openGitWorkbench('changes')}>
+          <ArrowsOut size={16} />
+        </IconButton>
       </div>
       {status && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span
-            className="inline-flex h-6 min-w-0 max-w-full items-center gap-1 rounded-pill bg-raised px-2 text-[12px] text-ink-muted"
-            title={status.upstream ? `上游 ${status.upstream}` : '没有上游分支'}
-            data-testid="git-branch"
-          >
-            <GitBranch size={12} aria-hidden="true" className="shrink-0" />
-            <span className="truncate">{status.detached ? `分离于 ${status.branch}` : status.branch}</span>
-          </span>
-          {status.ahead > 0 && <span className="text-[12px] text-ink-muted">领先 {status.ahead}</span>}
-          {status.behind > 0 && <span className="text-[12px] text-ink-muted">落后 {status.behind}</span>}
+          <BranchPill />
+          <RemoteBar />
         </div>
       )}
     </div>
   )
 }
 
-function Body(): React.JSX.Element {
+/** G-20 分支 pill：点开是本地分支菜单（可搜索，底部新建分支） */
+function BranchPill(): React.JSX.Element | null {
+  const status = useGit((s) => s.status)
+  // 远端操作进行中也算忙：pull 合并阶段再暂存 / 提交会抢 index.lock（审查 2026-11-06）
+  const busy = useGit((s) => s.busy || s.remote !== null)
+  const remote = useGit((s) => s.remote)
+  const [open, setOpen] = useState(false)
+  const btn = useRef<HTMLButtonElement>(null)
+  if (!status) return null
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        disabled={busy || Boolean(remote)}
+        onClick={() => setOpen(true)}
+        className="inline-flex h-6 min-w-0 max-w-full items-center gap-1 rounded-pill bg-raised px-2 text-[12px] text-ink-muted transition-colors duration-150 hover:text-ink-strong disabled:text-ink-faint"
+        title={status.upstream ? `上游 ${status.upstream}` : '没有上游分支'}
+        data-testid="git-branch"
+      >
+        <GitBranch size={12} aria-hidden="true" className="shrink-0" />
+        <span className="truncate">{status.detached ? `分离于 ${status.branch}` : status.branch}</span>
+        <CaretDown size={12} aria-hidden="true" className="shrink-0" />
+      </button>
+      {open && <BranchMenu anchor={btn.current} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function BranchMenu({ anchor, onClose }: { anchor: HTMLElement | null; onClose: () => void }): React.JSX.Element {
+  const branches = useGit((s) => s.branches)
+  const loadBranches = useGit((s) => s.loadBranches)
+  const checkout = useGit((s) => s.checkout)
+  const createBranch = useGit((s) => s.createBranch)
+  const [query, setQuery] = useState('')
+  const [newName, setNewName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  /** 键盘高亮的分支（↑↓ 移动，Enter 切换） */
+  const [active, setActive] = useState(0)
+  const panel = useRef<HTMLDivElement>(null)
+  useOverlay(panel, onClose)
+  useEffect(() => {
+    void loadBranches()
+    requestAnimationFrame(() => panel.current?.querySelector<HTMLInputElement>('input')?.focus())
+  }, [loadBranches])
+
+  const r = anchor?.getBoundingClientRect()
+  const left = r ? Math.max(8, Math.min(r.left, window.innerWidth - 288)) : 8
+  const top = r ? r.bottom + 4 : 48
+  const q = query.trim().toLowerCase()
+  const list = (branches ?? EMPTY_BRANCHES).filter((b) => !q || b.name.toLowerCase().includes(q))
+  const act = Math.min(active, Math.max(0, list.length - 1))
+
+  const pick = async (name: string, current: boolean): Promise<void> => {
+    if (current) return onClose()
+    if (await checkout(name)) onClose()
+  }
+  const create = async (): Promise<void> => {
+    const name = newName.trim()
+    if (!name || creating) return
+    setCreating(true)
+    setError(null)
+    try {
+      await createBranch(name)
+      onClose()
+    } catch (e) {
+      setError(errorText(e))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-40" onMouseDown={onClose}>
+      <div
+        ref={panel}
+        role="dialog"
+        aria-label="切换分支"
+        data-testid="git-branch-menu"
+        style={{ left, top }}
+        className="absolute flex max-h-[min(420px,calc(100vh-64px))] w-[280px] flex-col rounded-card border border-line bg-card shadow-[var(--shadow-float)]"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-line p-2">
+          <input
+            aria-label="搜索分支"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="git-branch-listbox"
+            aria-activedescendant={list[act] ? `git-branch-opt-${act}` : undefined}
+            data-testid="git-branch-search"
+            value={query}
+            placeholder="搜索分支"
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setActive(0)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                if (list.length) setActive((act + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length)
+              } else if (e.key === 'Enter' && list[act]) {
+                e.preventDefault()
+                void pick(list[act].name, list[act].current)
+              }
+            }}
+            className="h-8 w-full rounded-control border border-line bg-sunken px-2 text-[13px] text-ink-strong outline-none transition-colors duration-150 placeholder:text-ink-faint focus:border-accent"
+          />
+        </div>
+        <ul id="git-branch-listbox" role="listbox" aria-label="本地分支" className="min-h-0 flex-1 overflow-y-auto py-1">
+          {!branches && <li className="px-3 py-1.5 text-[12px] text-ink-muted">读取中…</li>}
+          {branches && list.length === 0 && <li className="px-3 py-1.5 text-[12px] text-ink-muted">没有匹配的分支</li>}
+          {list.map((b, i) => (
+            <li key={b.name} id={`git-branch-opt-${i}`} role="option" aria-selected={i === act}>
+              <button
+                type="button"
+                tabIndex={-1}
+                data-git-branch-item={b.name}
+                onClick={() => void pick(b.name, b.current)}
+                onMouseEnter={() => setActive(i)}
+                className={`flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-raised ${i === act ? 'bg-raised' : ''}`}
+                title={b.subject}
+              >
+                <span className="grid size-4 shrink-0 place-items-center">{b.current && <Check size={16} aria-label="当前分支" className="text-accent" />}</span>
+                <span className={`min-w-0 flex-1 truncate text-[13px] ${b.current ? 'font-semibold text-ink-strong' : 'text-ink'}`}>{b.name}</span>
+                {b.upstream && <span className="shrink-0 truncate text-[12px] text-ink-faint">{b.upstream}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="flex flex-col gap-1 border-t border-line p-2">
+          <div className="flex items-center gap-1">
+            <input
+              aria-label="新分支名"
+              data-testid="git-branch-new"
+              value={newName}
+              placeholder="新建分支并切换（Enter）"
+              onChange={(e) => setNewName(e.target.value.replace(/\s/g, '-'))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void create()
+                }
+              }}
+              className="h-8 min-w-0 flex-1 rounded-control border border-line bg-card px-2 font-mono text-[12px] text-ink-strong outline-none transition-colors duration-150 placeholder:font-sans placeholder:text-ink-faint focus:border-accent"
+            />
+            <IconButton label="新建分支" disabled={!newName.trim() || creating} onClick={() => void create()}>
+              <Plus size={16} />
+            </IconButton>
+          </div>
+          {error && (
+            <p role="alert" data-testid="git-branch-error" className="text-[12px] text-fault">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** git 进度行首词 → 中文阶段（移植自源项目 ActionBar） */
+const STAGE_LABEL: Record<string, string> = {
+  remote: '远端准备',
+  enumerating: '枚举对象',
+  counting: '统计对象',
+  compressing: '压缩对象',
+  receiving: '接收对象',
+  resolving: '处理差异',
+  writing: '写入对象',
+  unpacking: '解包对象',
+  updating: '更新文件'
+}
+const OP_LABEL = { fetch: '获取', pull: '拉取', push: '推送' } as const
+/** 远端操作开始多久后才出现「取消」，短操作不让按钮一闪而过（G-23） */
+const CANCEL_DELAY_MS = 1500
+
+/** G-22 / G-23 fetch / pull / push 按钮组：进行中换成阶段进度 + 延迟出现的取消 */
+function RemoteBar(): React.JSX.Element | null {
+  const status = useGit((s) => s.status)
+  // 远端操作进行中也算忙：pull 合并阶段再暂存 / 提交会抢 index.lock（审查 2026-11-06）
+  const busy = useGit((s) => s.busy || s.remote !== null)
+  const remote = useGit((s) => s.remote)
+  const runRemote = useGit((s) => s.runRemote)
+  const cancelRemote = useGit((s) => s.cancelRemote)
+  const [showCancel, setShowCancel] = useState(false)
+  useEffect(() => {
+    if (!remote) {
+      setShowCancel(false)
+      return
+    }
+    const t = window.setTimeout(() => setShowCancel(true), Math.max(0, CANCEL_DELAY_MS - (Date.now() - remote.startedAt)))
+    return () => window.clearTimeout(t)
+  }, [remote])
+  if (!status) return null
+
+  if (remote) {
+    const stage = remote.stage ? (STAGE_LABEL[remote.stage.split('/').pop() ?? ''] ?? '进行中') : '连接中'
+    return (
+      <div className="flex min-w-0 items-center gap-1.5" data-testid="git-remote-progress">
+        <ArrowsClockwise size={12} aria-hidden="true" className="shrink-0 animate-spin text-ink-muted motion-reduce:animate-none" />
+        <span className="min-w-0 truncate text-[12px] text-ink-muted" aria-live="polite">
+          {OP_LABEL[remote.op]} · {stage}
+          {remote.stage ? ` ${remote.percent}%` : ''}
+        </span>
+        {showCancel && (
+          <button
+            type="button"
+            data-testid="git-remote-cancel"
+            onClick={() => void cancelRemote()}
+            className="h-6 shrink-0 rounded-pill border border-line-strong px-2 text-[12px] text-ink-strong transition-colors duration-150 hover:bg-raised"
+          >
+            取消
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  const off = !status.hasRemote
+  const offHint = off ? '这个仓库没有配置远端' : undefined
+  const pushLabel = status.upstream ? `推送${status.ahead ? `（领先 ${status.ahead}）` : ''}` : '推送并设为上游'
+  return (
+    <div className="ml-auto flex items-center gap-0.5" role="group" aria-label="远端操作" title={offHint} data-testid="git-remote-bar">
+      <IconButton label={off ? '获取（没有远端）' : '获取（fetch）'} disabled={off || busy} onClick={() => void runRemote('fetch')}>
+        <CloudArrowDown size={16} />
+      </IconButton>
+      <CountButton label={off ? '拉取（没有远端）' : `拉取${status.behind ? `（落后 ${status.behind}）` : ''}`} count={status.behind} disabled={off || busy || !status.upstream} onClick={() => void runRemote('pull')}>
+        <ArrowLineDown size={16} />
+      </CountButton>
+      <CountButton label={off ? '推送（没有远端）' : pushLabel} count={status.ahead} disabled={off || busy || status.detached} onClick={() => void runRemote('push')}>
+        <ArrowLineUp size={16} />
+      </CountButton>
+    </div>
+  )
+}
+
+/** 图标按钮 + 数字（落后 / 领先数），数字为 0 时不显示 */
+function CountButton({ label, count, disabled, onClick, children }: { label: string; count: number; disabled: boolean; onClick: () => void; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-control px-1.5 text-ink-muted transition-colors duration-150 hover:bg-raised hover:text-ink-strong disabled:pointer-events-none disabled:text-ink-faint"
+    >
+      {children}
+      {count > 0 && <span className="font-mono text-[12px]">{count}</span>}
+    </button>
+  )
+}
+
+/**
+ * 仓库里有会执行命令的配置 / 钩子且没确认过（审查 2026-11-06 高危项）：列出来让用户决定。
+ * 确认前主进程拒绝除探测、扫描以外的所有 git 命令；内容变了（指纹不同）会再问一次
+ */
+function RiskPanel({ risk }: { risk: GitRisk }): React.JSX.Element {
+  const trust = useGit((s) => s.trust)
+  const busy = useGit((s) => s.busy)
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pt-3 pb-3" data-testid="git-risk">
+      <div role="alert" className="flex items-start gap-1.5 text-[13px] font-semibold text-warn">
+        <Warning size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+        这个仓库配置了会执行命令的项目
+      </div>
+      <p className="text-[12px] text-ink-muted">
+        查看状态、暂存、提交、切分支、拉取或推送时，git 会运行下面这些命令。它们可能是你自己配的（如 husky、Git LFS），也可能是工作区里的 agent 写进去的。确认来源可信再继续。
+      </p>
+      <ul className="flex flex-col gap-1.5" data-testid="git-risk-items">
+        {risk.items.map((it) => (
+          <li key={`${it.kind}:${it.name}`} className="rounded-control border border-line bg-card px-2 py-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="shrink-0 rounded-badge border border-warn px-1 text-[12px] text-warn">{it.kind === 'hook' ? '钩子' : '配置'}</span>
+              <span className="min-w-0 truncate font-mono text-[12px] text-ink-strong" title={it.name}>
+                {it.name}
+              </span>
+            </div>
+            {it.detail && <div className="mt-1 font-mono text-[12px] break-all text-ink">{it.detail}</div>}
+            <div className="mt-0.5 text-[12px] text-ink-muted">{it.why}</div>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <Button variant="primary" disabled={busy} onClick={() => void trust()} testId="git-risk-trust">
+          信任这个仓库并继续
+        </Button>
+      </div>
+      <p className="text-[12px] text-ink-muted">不信任的话，这个工作区的 Git 栏保持只读提示，不执行任何 git 操作。内容有变化时会再问。</p>
+    </div>
+  )
+}
+
+export function Body(): React.JSX.Element {
   const probe = useGit((s) => s.probe)
   const status = useGit((s) => s.status)
   const error = useGit((s) => s.error)
+  const risk = useGit((s) => s.risk)
   const files = status?.files ?? EMPTY_FILES
 
   if (error) {
@@ -138,6 +460,7 @@ function Body(): React.JSX.Element {
     if (probe.reason === 'disabled') return <Empty icon={<GitBranch size={20} />} title="未启用 Git 管理" body="在设置 → Git 里打开" />
     return <Empty icon={<Warning size={20} />} title="无法读取仓库" body={probe.reason === 'error' ? probe.message : ''} danger />
   }
+  if (risk) return <RiskPanel risk={risk} />
   if (!status) {
     return (
       <div className="flex flex-col gap-2 px-3 pt-3" aria-busy="true" aria-label="加载中">
@@ -176,7 +499,8 @@ function Body(): React.JSX.Element {
 
 function Group({ title, staged, files }: { title: string; staged: boolean; files: GitFile[] }): React.JSX.Element | null {
   const [open, setOpen] = useState(true)
-  const busy = useGit((s) => s.busy)
+  // 远端操作进行中也算忙：pull 合并阶段再暂存 / 提交会抢 index.lock（审查 2026-11-06）
+  const busy = useGit((s) => s.busy || s.remote !== null)
   const stage = useGit((s) => s.stage)
   const unstage = useGit((s) => s.unstage)
   const discard = useGit((s) => s.discard)
@@ -226,7 +550,8 @@ function Group({ title, staged, files }: { title: string; staged: boolean; files
 }
 
 const FileRow = memo(function FileRow({ file }: { file: GitFile }): React.JSX.Element {
-  const busy = useGit((s) => s.busy)
+  // 远端操作进行中也算忙：pull 合并阶段再暂存 / 提交会抢 index.lock（审查 2026-11-06）
+  const busy = useGit((s) => s.busy || s.remote !== null)
   const openDiff = useGit((s) => s.openDiff)
   const stage = useGit((s) => s.stage)
   const unstage = useGit((s) => s.unstage)
@@ -278,6 +603,22 @@ function fileMenu(file: GitFile): MenuItem[] {
   if (file.staged) items.push({ label: '取消暂存', onSelect: () => void g.unstage([file.path]) })
   else items.push({ label: '暂存', onSelect: () => void g.stage([file.path]) })
   items.push({ label: '复制路径', onSelect: () => void window.warp.clipboard.write(file.path) })
+  // G-17：跳目录栏 / 预览栏。路径相对仓库根，换成工作区相对路径；不在工作区目录内或已删除时置灰
+  const id = g.workspaceId
+  const probe = g.probe
+  const rel = id && probe && probe.available ? toWorkspaceRel(probe.relativeDir, file.path.replace(/\/$/, '')) : null
+  const usable = Boolean(id && rel && file.status !== 'deleted')
+  const name = splitPath(file.path).name
+  items.push(
+    { kind: 'separator' },
+    { label: '预览文件', disabled: !usable, onSelect: () => id && rel && usePreview.getState().open({ workspaceId: id, rel, name }) },
+    { label: '在目录栏中定位', disabled: !usable, onSelect: () => id && rel && locateInFileRail(id, rel) },
+    {
+      label: '在资源管理器中显示',
+      disabled: !usable,
+      onSelect: () => id && rel && void window.warp.fs.reveal(id, rel).catch((e: unknown) => notifyError(e, '打开失败'))
+    }
+  )
   if (!file.staged && file.status !== 'conflict') {
     items.push({ kind: 'separator' })
     items.push({ label: file.status === 'untracked' ? '删除文件…' : '丢弃改动…', danger: true, onSelect: () => void g.discard([file.path]) })
@@ -285,9 +626,31 @@ function fileMenu(file: GitFile): MenuItem[] {
   return items
 }
 
+/** 展开目录栏到这个文件并选中它（目录栏收起时先展开） */
+function locateInFileRail(workspaceId: string, rel: string): void {
+  const layout = useLayout.getState()
+  if (!railsOf(layout).fileShown) layout.toggleFileRail()
+  if (useSessions.getState().selectedWorkspaceId !== workspaceId) useSessions.getState().selectWorkspace(workspaceId)
+  const tree = useFileTree.getState()
+  const parts = rel.split('/')
+  for (let i = 1; i < parts.length; i++) tree.setOpen(workspaceId, parts.slice(0, i).join('/'), true)
+  tree.select(workspaceId, rel)
+  // 目录层级是异步读的：等节点出现后滚到可见
+  let tries = 0
+  const scroll = (): void => {
+    const el = document.querySelector<HTMLElement>(`[data-rail="files"] [role="treeitem"][data-rel="${CSS.escape(rel)}"]`)
+    if (el) {
+      el.scrollIntoView({ block: 'nearest' })
+      el.focus()
+    } else if (++tries < 30) window.setTimeout(scroll, 100)
+  }
+  requestAnimationFrame(scroll)
+}
+
 function CommitBox({ stagedCount }: { stagedCount: number }): React.JSX.Element {
   const workspaceId = useGit((s) => s.workspaceId)
-  const busy = useGit((s) => s.busy)
+  // 远端操作进行中也算忙：pull 合并阶段再暂存 / 提交会抢 index.lock（审查 2026-11-06）
+  const busy = useGit((s) => s.busy || s.remote !== null)
   const commit = useGit((s) => s.commit)
   const [summary, setSummary] = useState('')
   const [description, setDescription] = useState('')
@@ -393,10 +756,11 @@ function CommitBox({ stagedCount }: { stagedCount: number }): React.JSX.Element 
   )
 }
 
-function DiffPane({ path, staged }: { path: string; staged: boolean }): React.JSX.Element {
+export function DiffPane({ path, staged }: { path: string; staged: boolean }): React.JSX.Element {
   const diff = useGit((s) => s.diff)
   const diffError = useGit((s) => s.diffError)
-  const busy = useGit((s) => s.busy)
+  // 远端操作进行中也算忙：pull 合并阶段再暂存 / 提交会抢 index.lock（审查 2026-11-06）
+  const busy = useGit((s) => s.busy || s.remote !== null)
   const backToList = useGit((s) => s.backToList)
   const stage = useGit((s) => s.stage)
   const unstage = useGit((s) => s.unstage)
@@ -449,7 +813,7 @@ function DiffPane({ path, staged }: { path: string; staged: boolean }): React.JS
 const LINE_TONE = { added: 'bg-live/10', removed: 'bg-fault/10', context: '' } as const
 const SIGN = { added: '+', removed: '−', context: ' ' } as const
 
-const DiffBody = memo(function DiffBody({ diff }: { diff: GitDiff }): React.JSX.Element {
+export const DiffBody = memo(function DiffBody({ diff }: { diff: GitDiff }): React.JSX.Element {
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-sunken font-mono text-[12px] leading-[1.6]" data-testid="git-diff-body">
       {diff.hunks.map((h, i) => (
@@ -469,7 +833,7 @@ const DiffBody = memo(function DiffBody({ diff }: { diff: GitDiff }): React.JSX.
   )
 })
 
-function Empty({ icon, title, body, danger = false }: { icon: React.ReactNode; title: string; body: string; danger?: boolean }): React.JSX.Element {
+export function Empty({ icon, title, body, danger = false }: { icon: React.ReactNode; title: string; body: string; danger?: boolean }): React.JSX.Element {
   return (
     <div className="flex flex-col items-start gap-1.5 px-3 pt-4" data-testid="git-empty">
       <span className={`flex items-center gap-1.5 text-[13px] font-semibold ${danger ? 'text-fault' : 'text-ink-strong'}`}>

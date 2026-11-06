@@ -31,7 +31,7 @@ import { terminals } from '../terminal/TerminalRegistry'
 import { errorText } from '../lib/errors'
 import { isLive, useUptime } from '../lib/time'
 import { Button, IconButton, SessionIcon, StatusPill, WorkspaceIcon } from './ui'
-import { closeSession, focusCell, openShellIn, openWorkspace, placeSession } from './actions'
+import { closeSession, focusCell, openGitFor, openShellIn, openWorkspace, placeSession } from './actions'
 import { DRAG_FILE, DRAG_SESSION, DRAG_WS, beginDrag, carries, draggingId, endDrag } from './rail/drag'
 import { insertPath } from './fileActions'
 
@@ -114,6 +114,7 @@ function SessionView({ session, index, focused }: { session: SessionMeta; index:
   const hostRef = useRef<HTMLDivElement>(null)
   const workspace = useConfig((s) => s.config?.workspaces.find((w) => w.id === session.workspaceId))
   const branch = useBranches((s) => s.branches[session.workspaceId])
+  const gitEnabled = useConfig((s) => s.config?.settings.gitEnabled === true)
   const multi = useLayout((s) => visibleCount(s) > 1)
   const maximized = useLayout((s) => s.maximized === index)
   const toggleMaximize = useLayout((s) => s.toggleMaximize)
@@ -227,12 +228,26 @@ function SessionView({ session, index, focused }: { session: SessionMeta; index:
             广播中
           </span>
         )}
-        {branch && (
-          <span className="hidden h-6 min-w-0 shrink items-center gap-1 rounded-pill bg-raised px-2 text-[12px] text-ink-muted @min-[360px]:inline-flex">
-            <GitBranch size={12} aria-label="分支" className="shrink-0" />
-            <span className="truncate">{branch}</span>
-          </span>
-        )}
+        {branch &&
+          (gitEnabled ? (
+            // G-05：Git 管理打开时分支 pill 可点，右栏切到这个工作区的 Git 页签
+            <button
+              type="button"
+              data-testid="cell-branch"
+              aria-label={`分支 ${branch}，打开 Git 栏`}
+              title="打开 Git 栏"
+              onClick={() => openGitFor(session.workspaceId)}
+              className="hidden h-6 min-w-0 shrink items-center gap-1 rounded-pill bg-raised px-2 text-[12px] text-ink-muted transition-colors duration-150 hover:text-ink-strong @min-[360px]:inline-flex"
+            >
+              <GitBranch size={12} aria-hidden="true" className="shrink-0" />
+              <span className="truncate">{branch}</span>
+            </button>
+          ) : (
+            <span className="hidden h-6 min-w-0 shrink items-center gap-1 rounded-pill bg-raised px-2 text-[12px] text-ink-muted @min-[360px]:inline-flex">
+              <GitBranch size={12} aria-label="分支" className="shrink-0" />
+              <span className="truncate">{branch}</span>
+            </span>
+          ))}
         <span className="hidden min-w-0 flex-1 truncate font-mono text-[12px] text-ink-faint @min-[480px]:block" title={session.cwd}>
           {session.cwd}
         </span>
