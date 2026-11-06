@@ -313,6 +313,16 @@ function Children({ workspaceId, rel, depth }: { workspaceId: string; rel: strin
   const [limit, setLimit] = useState(PAGE)
   const indent = { '--depth': depth } as React.CSSProperties
   const pad = 'pl-[calc(24px+var(--depth)*14px)]'
+  // 选中项（或它所在的子目录）排在分页之后时自动多显示几页：「在目录栏中定位」等外部定位要能露出它（审查 2026-11-06）
+  const selected = useFileTree((s) => s.trees[workspaceId]?.selected ?? null)
+  const entries = d && d.status === 'ok' ? d.entries : null
+  useEffect(() => {
+    if (!selected || !entries) return
+    const inner = rel ? (selected.startsWith(`${rel}/`) ? selected.slice(rel.length + 1) : null) : selected
+    if (!inner) return
+    const idx = entries.findIndex((e) => e.name === inner.split('/')[0])
+    if (idx >= limit) setLimit(Math.ceil((idx + 1) / PAGE) * PAGE)
+  }, [selected, entries, rel, limit])
 
   if (!d || d.status === 'loading') {
     return (

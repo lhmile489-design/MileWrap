@@ -633,7 +633,13 @@ function locateInFileRail(workspaceId: string, rel: string): void {
   if (useSessions.getState().selectedWorkspaceId !== workspaceId) useSessions.getState().selectWorkspace(workspaceId)
   const tree = useFileTree.getState()
   const parts = rel.split('/')
-  for (let i = 1; i < parts.length; i++) tree.setOpen(workspaceId, parts.slice(0, i).join('/'), true)
+  for (let i = 0; i < parts.length; i++) {
+    const dir = parts.slice(0, i).join('/')
+    if (i > 0) tree.setOpen(workspaceId, dir, true)
+    // 目录栏缓存早于这个文件（agent 新建的目录 / 文件）时，缓存里没有下一级：重读这一层，否则节点不会出现
+    const d = useFileTree.getState().trees[workspaceId]?.dirs[dir]
+    if (d && d.status === 'ok' && !d.entries.some((e) => e.name === parts[i])) void tree.load(workspaceId, dir)
+  }
   tree.select(workspaceId, rel)
   // 目录层级是异步读的：等节点出现后滚到可见
   let tries = 0

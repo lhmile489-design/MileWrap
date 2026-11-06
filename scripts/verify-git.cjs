@@ -583,6 +583,26 @@ app.whenReady().then(async () => {
   await waitFor(`!!document.querySelector('[role="menu"]')`, 2000)
   await js(`[...document.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent.includes('在目录栏中定位')).click(); true`)
   check('「在目录栏中定位」选中目录栏里的该文件', await waitFor(`document.querySelector('[data-rail="files"] [role="treeitem"][data-rel="标记.txt"]')?.getAttribute('aria-selected') === 'true'`, 5000))
+  // 父目录超过 300 项（目录栏每批只渲染 300 项）：定位排在后面的文件，要自动扩到能露出它
+  const BIG = join(SUB, '大目录')
+  mkdirSync(BIG, { recursive: true })
+  for (let i = 0; i < 350; i++) writeFileSync(join(BIG, `f${String(i).padStart(3, '0')}.txt`), 'x\n')
+  g('add', '--', '子目录/大目录')
+  g('commit', '-q', '-m', 'big dir')
+  writeFileSync(join(BIG, 'f349.txt'), 'changed\n')
+  await clickRefresh()
+  const bigRow = row('子目录/大目录/f349.txt', 'false')
+  await waitFor(`!!document.querySelector('${bigRow}')`, 5000)
+  await js(`(() => { const el = document.querySelector('${bigRow}'); const r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 5 })); return true })()`)
+  await waitFor(`!!document.querySelector('[role="menu"]')`, 2000)
+  await js(`[...document.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent.includes('在目录栏中定位')).click(); true`)
+  check(
+    '父目录超过 300 项时也能定位到第 350 个文件',
+    await waitFor(`document.querySelector('[data-rail="files"] [role="treeitem"][data-rel="大目录/f349.txt"]')?.getAttribute('aria-selected') === 'true'`, 5000)
+  )
+  // 还原：撤掉这次提交，目录随之删掉，后面的历史用例不受影响
+  g('reset', '-q', '--hard', 'HEAD~1')
+  rmSync(BIG, { recursive: true, force: true })
   // 仓库根下、工作区目录外的文件：跳转项置灰
   writeFileSync(join(REPO, '根外.txt'), 'x\n')
   await clickRefresh()
