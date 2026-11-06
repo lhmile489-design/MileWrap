@@ -48,6 +48,8 @@ writeFileSync(
   'utf8'
 )
 
+// 调试面（window.__warpDebug）只在 MILE_WARP_DEBUG=1 时挂，必须在 require 主进程包之前设
+process.env.MILE_WARP_DEBUG = '1'
 require(join(ROOT, 'out', 'main', 'index.js'))
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

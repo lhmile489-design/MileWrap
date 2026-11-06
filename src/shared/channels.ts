@@ -95,6 +95,8 @@ export const CH = {
   shellOpenUrl: 'shell:openUrl',
   clipboardRead: 'clipboard:read',
   clipboardWrite: 'clipboard:write',
+  /** 剪贴板里有图片时存成临时 PNG，返回文件路径（粘给能读图的 agent） */
+  clipboardReadImage: 'clipboard:readImage',
 
   /** 活动指示与通知（升级建议 2.1 / 2.2 / 2.3） */
   sessionActivity: 'session:activity',
@@ -147,7 +149,7 @@ export const CH = {
   skillsReveal: 'skills:reveal',
   skillsParseGithubUrl: 'skills:parseGithubUrl',
   skillsInstallGithub: 'skills:installGithub',
-  /** 主进程弹文件对话框选 zip，渲染层拿不到路径 */
+  /** 主进程弹文件对话框选 zip，渲染层只拿一次性 token（与 workspace:pickIcon 同模式），installZip 收 token */
   skillsPickZip: 'skills:pickZip',
   skillsInstallZip: 'skills:installZip',
 

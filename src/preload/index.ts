@@ -13,11 +13,11 @@ import type {
   GitBranch,
   GitCommitDetail,
   GitLogPage,
+  GitDiff,
+  GitDiscardPlan,
   GitProgress,
   GitRisk,
   GitRemoteResult,
-  GitDiff,
-  GitDiscardPlan,
   GitStatus,
   HistoryDetail,
   HistoryExportFormat,
@@ -49,6 +49,8 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): Off {
 type Dims = { cols?: number; rows?: number }
 
 const api = {
+  /** 主进程判定的调试模式（只读；开发期 MILE_WARP_DEBUG=1 才为 true），渲染层据此决定是否挂 __warpDebug */
+  debug: process.argv.includes('--warp-debug'),
   theme: {
     get: (): Promise<'light' | 'dark'> => ipcRenderer.invoke(CH.themeGet),
     onChange: (cb: (theme: 'light' | 'dark') => void): Off => subscribe(CH.themeChanged, cb)
@@ -239,10 +241,11 @@ const api = {
       ipcRenderer.invoke(CH.skillsParseGithubUrl, { url }),
     installGithub: (url: string, targets: string[], onConflict: 'skip' | 'overwrite'): Promise<SkillsInstallResult & { parsed: { canonical: string } }> =>
       ipcRenderer.invoke(CH.skillsInstallGithub, { url, targets, onConflict }),
-    /** 主进程弹对话框选 zip；取消返回 null，路径不出渲染层 */
-    pickZip: (): Promise<string | null> => ipcRenderer.invoke(CH.skillsPickZip),
-    installZip: (zipPath: string, targets: string[], onConflict: 'skip' | 'overwrite'): Promise<SkillsInstallResult> =>
-      ipcRenderer.invoke(CH.skillsInstallZip, { zipPath, targets, onConflict })
+    /** 主进程弹对话框选 zip；取消返回 null。路径留在主进程，渲染层只拿一次性 token 和文件名 */
+    pickZip: (): Promise<{ token: string; name: string } | null> => ipcRenderer.invoke(CH.skillsPickZip),
+    /** token 换一次即作废（成功失败都作废），重装要重新 pickZip */
+    installZip: (token: string, targets: string[], onConflict: 'skip' | 'overwrite'): Promise<SkillsInstallResult> =>
+      ipcRenderer.invoke(CH.skillsInstallZip, { token, targets, onConflict })
   },
   shell: {
     openUrl: (url: string): Promise<void> => ipcRenderer.invoke(CH.shellOpenUrl, { url }),
@@ -252,7 +255,9 @@ const api = {
   },
   clipboard: {
     read: (): Promise<string> => ipcRenderer.invoke(CH.clipboardRead),
-    write: (text: string): Promise<void> => ipcRenderer.invoke(CH.clipboardWrite, { text })
+    write: (text: string): Promise<void> => ipcRenderer.invoke(CH.clipboardWrite, { text }),
+    /** 剪贴板里是图片时存成临时 PNG，返回文件路径；没有图片返回 null */
+    readImage: (): Promise<string | null> => ipcRenderer.invoke(CH.clipboardReadImage)
   },
   window: {
     minimize: (): void => ipcRenderer.send(CH.windowMinimize),

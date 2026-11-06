@@ -1,7 +1,9 @@
 import { createWriteStream, unlinkSync } from 'node:fs'
 import { readdirSync, renameSync, cpSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { app } from 'electron'
 import type { SkillsInstallResult } from '@shared/types'
 import { agentRootsOf, parseFrontmatter, isInstallable, type SkillRoot } from '../services/SkillsService'
 import { inside } from '../services/history/common'
@@ -9,9 +11,10 @@ import { extractZipGuarded, extractTarGzGuarded, findSkillDir, tempRoot, cleanup
 
 const DOWNLOAD_TIMEOUT_MS = 30_000
 const DOWNLOAD_MAX_BYTES = 50_000_000
-/** codeload 基址；verify harness 用环境变量指到本地 http 服务（打包后正常走真域名） */
+/** codeload 基址；verify harness 用环境变量指到本地 http 服务。打包后不认这个变量（与其它 MILE_WARP_TEST_* 一致），只走真域名 */
 function codeloadBase(): string {
-  return process.env['MILE_WARP_CODELOAD_OVERRIDE'] || 'https://codeload.github.com'
+  const override = !app.isPackaged ? process.env['MILE_WARP_CODELOAD_OVERRIDE'] : undefined
+  return override || 'https://codeload.github.com'
 }
 
 /** GitHub URL 解析结果：owner/repo[/tree/branch/subpath]（PRD §7 skills:parseGithubUrl） */
@@ -25,6 +28,9 @@ export type GithubRef = {
 
 const OWNER_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/
 const REPO_RE = /^[A-Za-z0-9._-]{1,100}$/
+/** 单个路径段（branch / subpath 用）：非空、不是 . / ..、不含 % \ : 与控制字符 */
+const SEG_OK = (seg: string): boolean =>
+  seg.length > 0 && seg.length <= 255 && seg !== '.' && seg !== '..' && !/[%\\:\u0000-\u001f]/.test(seg)
 
 /**
  * 解析 GitHub 仓库 URL / 短格式为结构化引用。只接受 github.com 形态（PRD §6.6 白名单）：
@@ -36,6 +42,13 @@ const REPO_RE = /^[A-Za-z0-9._-]{1,100}$/
 export function parseGithubUrl(input: unknown): GithubRef {
   const s = typeof input === 'string' ? input.trim() : ''
   if (!s) throw new Error('URL 不能为空')
+  // 先看原文：反斜杠、控制字符、. / .. 段（含 %2e 编码）一律拒绝。
+  // https 形态里 new URL 会把 .. 折叠掉，所以必须在解析前查原文，不能只查解析结果
+  if (/[\\\u0000-\u001f]/.test(s)) throw new Error('地址里不能有反斜杠或控制字符')
+  for (const seg of s.split('/')) {
+    const d = seg.replace(/%2e/gi, '.')
+    if (d === '.' || d === '..') throw new Error('地址里不能有 . 或 .. 路径段')
+  }
   let rest = s
   if (rest.startsWith('git@github.com:')) {
     rest = rest.slice('git@github.com:'.length)
@@ -51,9 +64,13 @@ export function parseGithubUrl(input: unknown): GithubRef {
       throw e
     }
   }
-  rest = rest.replace(/\.git$/, '')
-  const segs = rest.split('/').filter(Boolean)
+  rest = rest.replace(/\/+$/, '').replace(/\.git$/, '')
+  const segs = rest.split('/')
   if (segs.length < 2) throw new Error('至少要 owner/repo 两段')
+  // 解析后再逐段查一遍（兜底）：空段（a//b）、. / ..、% 编码、反斜杠都不放行
+  for (const seg of segs) {
+    if (!SEG_OK(seg)) throw new Error('地址里有不合法的路径段')
+  }
   const [owner, repo, treeWord, branch, ...sub] = segs
   if (!OWNER_RE.test(owner)) throw new Error('owner 名不合法')
   if (!REPO_RE.test(repo)) throw new Error('repo 名不合法')
@@ -125,6 +142,8 @@ export async function installFromGithub(input: unknown): Promise<GithubInstallOu
       const top = readdirSync(extractRoot, { withFileTypes: true }).find((e) => e.isDirectory())
       if (!top) throw new Error('归档里没有内容')
       base = join(extractRoot, top.name, ...ref.subpath.split('/'))
+      // parseGithubUrl 已拒 ../空段；这里再兜一层，拼出来的目录必须仍在解压根里
+      if (!inside(extractRoot, base)) throw new Error('子目录越出仓库归档')
       if (!existsSync(base) || !statSync(base).isDirectory()) throw new Error(`仓库里没有子目录 ${ref.subpath}`)
     }
     const skillDir = findSkillDir(base)
@@ -141,13 +160,40 @@ export async function installFromGithub(input: unknown): Promise<GithubInstallOu
   }
 }
 
-/** zip 安装：zipPath 由主进程 dialog 选出（渲染层拿不到路径），guard 解压后同上 */
+/*
+ * zip 一次性 token（与 workspace:pickIcon 同一模式）：skills:pickZip 由主进程弹对话框选文件，
+ * 路径留在主进程，渲染层只拿 token + 文件名；skills:installZip 用 token 换路径，换一次即作废。
+ */
+const ZIP_TOKEN_TTL_MS = 10 * 60 * 1000
+const ZIP_TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const zipTokens = new Map<string, { path: string; at: number }>()
+
+/** 登记主进程选出的 zip 路径，返回给渲染层的一次性 token 与展示用文件名 */
+export function issueZipToken(zipPath: string): { token: string; name: string } {
+  if (!zipPath.toLowerCase().endsWith('.zip')) throw new Error('要选择 .zip 文件')
+  const now = Date.now()
+  for (const [k, v] of zipTokens) if (now - v.at > ZIP_TOKEN_TTL_MS) zipTokens.delete(k)
+  const token = randomUUID()
+  zipTokens.set(token, { path: zipPath, at: now })
+  return { token, name: basename(zipPath) }
+}
+
+/** token 换路径：无论成败都作废（不能复用）；格式不对、不存在、过期一律拒绝 */
+function takeZipToken(token: unknown): string {
+  if (typeof token !== 'string' || !ZIP_TOKEN_RE.test(token)) throw new Error('zip 参数不合法')
+  const item = zipTokens.get(token)
+  zipTokens.delete(token)
+  if (!item || Date.now() - item.at > ZIP_TOKEN_TTL_MS) throw new Error('所选 zip 已失效，请重新选择')
+  return item.path
+}
+
+/** zip 安装：渲染层只传 token，路径由主进程 dialog 选出后留在主进程；guard 解压后同上 */
 export async function installFromZip(input: unknown): Promise<SkillsInstallResult> {
   const r = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
-  const zipPath = typeof r.zipPath === 'string' ? r.zipPath : ''
-  if (!zipPath || !zipPath.toLowerCase().endsWith('.zip')) throw new Error('要选择 .zip 文件')
+  // 先校验 targets 再换 token：参数写错不白白作废用户选的文件
   const targets = targetsOf(r)
   const conflict = r.onConflict === 'overwrite' ? 'overwrite' : 'skip'
+  const zipPath = takeZipToken(r.token)
   const extractRoot = extractZipGuarded(zipPath)
   try {
     const skillDir = findSkillDir(extractRoot)

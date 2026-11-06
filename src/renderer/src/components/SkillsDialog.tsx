@@ -430,7 +430,8 @@ function InstallPane({ onDone, agentIds }: {
   const [parseErr, setParseErr] = useState<string | null>(null)
   const [targets, setTargets] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
-  const [zipPath, setZipPath] = useState<string | null>(null)
+  // 主进程选出的 zip：只拿一次性 token + 文件名，路径不进渲染层；token 安装一次即作废
+  const [zip, setZip] = useState<{ token: string; name: string } | null>(null)
 
   const toggle = (id: string): void => setTargets((ts) => (ts.includes(id) ? ts.filter((x) => x !== id) : [...ts, id]))
 
@@ -448,8 +449,11 @@ function InstallPane({ onDone, agentIds }: {
     if (targets.length === 0 || busy) return
     setBusy(true)
     try {
-      if (zipPath) {
-        onDone(await window.warp.skills.installZip(zipPath, targets, 'overwrite'))
+      if (zip) {
+        const picked = zip
+        // token 用一次就作废（成败都是）：先清掉，失败后要重新选文件
+        setZip(null)
+        onDone(await window.warp.skills.installZip(picked.token, targets, 'overwrite'))
       } else if (parsed) {
         onDone(await window.warp.skills.installGithub(parsed.canonical, targets, 'overwrite'))
       }
@@ -463,7 +467,7 @@ function InstallPane({ onDone, agentIds }: {
   const pickZip = async (): Promise<void> => {
     const p = await window.warp.skills.pickZip()
     if (p) {
-      setZipPath(p)
+      setZip(p)
       setUrl('')
       setParsed(null)
       setParseErr(null)
@@ -482,9 +486,9 @@ function InstallPane({ onDone, agentIds }: {
           placeholder="owner/repo 或 https://github.com/owner/repo/tree/main/subdir"
           aria-label="GitHub 仓库地址"
           className={`${FIELD} min-w-0 flex-1`}
-          disabled={busy || zipPath != null}
+          disabled={busy || zip != null}
         />
-        <Button onClick={() => void checkUrl()} disabled={busy || !url.trim() || zipPath != null}>
+        <Button onClick={() => void checkUrl()} disabled={busy || !url.trim() || zip != null}>
           解析
         </Button>
       </div>
@@ -503,12 +507,12 @@ function InstallPane({ onDone, agentIds }: {
           <DownloadSimple size={16} aria-hidden="true" />
           选择 zip 文件
         </Button>
-        {zipPath && (
+        {zip && (
           <span className="flex items-center text-[12px] text-ink-muted" data-testid="skills-zip-picked">
-            {zipPath.split(/[\/]/).pop()}
+            {zip.name}
             <IconButton
               label="移除所选 zip"
-              onClick={() => setZipPath(null)}
+              onClick={() => setZip(null)}
             >
               <X size={16} aria-hidden="true" />
             </IconButton>
@@ -536,7 +540,7 @@ function InstallPane({ onDone, agentIds }: {
       </div>
 
       <div className="mt-5">
-        <Button onClick={() => void install()} disabled={busy || targets.length === 0 || (!parsed && !zipPath)}>
+        <Button onClick={() => void install()} disabled={busy || targets.length === 0 || (!parsed && !zip)}>
           安装（{targets.length} 个目标）
         </Button>
         <p className="mt-2 text-[12px] text-ink-faint">同名 skill 会先备份旧目录为 .bak-时间戳 再覆盖。</p>

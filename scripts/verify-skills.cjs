@@ -57,8 +57,61 @@ if (!existsSync(GOOD_TAR) || !existsSync(GOOD_ZIP) || !existsSync(EVIL_ZIP)) {
     { name: 'good/SKILL.md', data: Buffer.from('---\nname: good\n---\n\n# G\n') }
   ]))
 }
+/** 手写 ustar 归档（gzip）：Windows 上建的符号链接打包后变普通文件，链接条目只能手造（typeflag '2'） */
+function buildTarGz(entries) {
+  const blocks = []
+  for (const e of entries) {
+    const h = Buffer.alloc(512)
+    const data = e.data || Buffer.alloc(0)
+    h.write(e.name, 0, 100, 'utf8')
+    h.write('0000644\0', 100); h.write('0000000\0', 108); h.write('0000000\0', 116)
+    h.write(data.length.toString(8).padStart(11, '0') + '\0', 124)
+    h.write('00000000000\0', 136)
+    h.write('        ', 148)
+    h.write(e.type || '0', 156)
+    if (e.link) h.write(e.link, 157, 100, 'utf8')
+    h.write('ustar\0', 257); h.write('00', 263)
+    let sum = 0
+    for (const b of h) sum += b
+    h.write(sum.toString(8).padStart(6, '0') + '\0 ', 148)
+    blocks.push(h, data, Buffer.alloc((512 - (data.length % 512)) % 512))
+  }
+  blocks.push(Buffer.alloc(1024))
+  return require('node:zlib').gzipSync(Buffer.concat(blocks))
+}
+const LINK_TAR = buildTarGz([
+  { name: 'link-repo-main/', type: '5' },
+  { name: 'link-repo-main/link-skill/', type: '5' },
+  { name: 'link-repo-main/link-skill/SKILL.md', data: Buffer.from('---\nname: link-skill\n---\n') },
+  { name: 'link-repo-main/link-skill/escape', type: '2', link: 'C:/Windows/System32' }
+])
+// 文件名本身带 " -> " 的正常归档：预检按名单比对，不能误判成链接
+const ARROW_TAR = buildTarGz([
+  { name: 'arrow-repo-main/', type: '5' },
+  { name: 'arrow-repo-main/arrow-skill/', type: '5' },
+  { name: 'arrow-repo-main/arrow-skill/SKILL.md', data: Buffer.from('---\nname: arrow-skill\n---\n') },
+  { name: 'arrow-repo-main/arrow-skill/weird -> name.txt', data: Buffer.from('ok') }
+])
+// 条目名含冒号（NTFS 备用数据流）：必须拒
+const ADS_TAR = buildTarGz([
+  { name: 'ads-repo-main/', type: '5' },
+  { name: 'ads-repo-main/ads-skill/', type: '5' },
+  { name: 'ads-repo-main/ads-skill/SKILL.md', data: Buffer.from('---\nname: ads-skill\n---\n') },
+  { name: 'ads-repo-main/ads-skill/notes.txt:hidden', data: Buffer.from('hidden') }
+])
 const codeload = http.createServer((req, res) => {
-  // 只模拟一个 URL：codeload.github.com/owner/repo/tar.gz/HEAD
+  const extra = { '/demo-owner/arrow-repo/tar.gz/HEAD': ARROW_TAR, '/demo-owner/ads-repo/tar.gz/HEAD': ADS_TAR }[req.url]
+  if (extra) {
+    res.writeHead(200, { 'content-type': 'application/x-gzip' })
+    res.end(extra)
+    return
+  }
+  if (req.url === '/demo-owner/link-repo/tar.gz/HEAD') {
+    res.writeHead(200, { 'content-type': 'application/x-gzip' })
+    res.end(LINK_TAR)
+    return
+  }
+  // codeload.github.com/owner/repo/tar.gz/HEAD
   if (req.url === '/demo-owner/demo-repo/tar.gz/HEAD') {
     const { readFileSync } = require('node:fs')
     res.writeHead(200, { 'content-type': 'application/x-gzip' })
@@ -88,9 +141,10 @@ function buildEvilZip(entries) {
     local.writeUInt16LE(nameBuf.length, 26)
     chunks.push(local, nameBuf, e.data)
     const cd = Buffer.alloc(46)
-    cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(20, 4); cd.writeUInt16LE(20, 6)
-    cd.writeUInt32LE(crc, 16); cd.writeUInt32LE(e.data.length, 20); cd.writeUInt32LE(e.data.length, 24)
-    cd.writeUInt16LE(nameBuf.length, 28); cd.writeUInt32LE(offset, 42)
+    // e.attr：外部属性（高 16 位 unix mode，造符号链接条目用）；e.declared：中央目录里谎报的解压大小（造炸弹用）
+    cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(e.attr != null ? 0x0314 : 20, 4); cd.writeUInt16LE(20, 6)
+    cd.writeUInt32LE(crc, 16); cd.writeUInt32LE(e.data.length, 20); cd.writeUInt32LE(e.declared ?? e.data.length, 24)
+    cd.writeUInt16LE(nameBuf.length, 28); cd.writeUInt32LE((e.attr ?? 0) >>> 0, 38); cd.writeUInt32LE(offset, 42)
     central.push(cd, nameBuf)
     offset += local.length + nameBuf.length + e.data.length
   }
@@ -305,16 +359,115 @@ app.whenReady().then(async () => {
   const ghBody = readFileSync(join(HOME, '.codex/skills/packaged-skill/SKILL.md'), 'utf8')
   check('内容来自归档', ghBody.includes('gh 安装验收'))
 
-  console.log('\n=== 9. M3：zip 安装 + zip-slip 防护 ===')
-  const zipInst = await caught(`window.warp.skills.installZip(${JSON.stringify(GOOD_ZIP)}, ['agents'], 'overwrite')`)
+  console.log('\n=== 8.1 GitHub 子路径 .. / 空段 / 反斜杠拒绝（I-3） ===')
+  const dotCases = [
+    ['短格式 ..', 'owner/repo/tree/main/../../etc'],
+    ['短格式 . 段', 'owner/repo/tree/main/./x'],
+    ['短格式空段', 'owner/repo/tree/main//x'],
+    ['git@ ..', 'git@github.com:owner/repo/tree/main/../x'],
+    ['https ..（new URL 会折叠）', 'https://github.com/owner/repo/tree/main/a/../../../x'],
+    ['https %2e%2e', 'https://github.com/owner/repo/tree/main/%2e%2e/x'],
+    ['branch 为 ..', 'owner/repo/tree/../x'],
+    ['反斜杠', 'owner/repo/tree/main/a\\..\\x']
+  ]
+  for (const [label, url] of dotCases) {
+    const r = await caught(`window.warp.skills.parseGithubUrl(${JSON.stringify(url)})`)
+    check(`parseGithubUrl 拒绝：${label}`, r.err != null, r.err ?? r.ok)
+  }
+  const ghDot = await caught(`window.warp.skills.installGithub('https://github.com/demo-owner/demo-repo/tree/main/../../x', ['codex'], 'overwrite')`)
+  check('installGithub 带 .. 子路径被拒', ghDot.err != null, ghDot.err ?? ghDot.ok)
+  const ghLink = await caught(`window.warp.skills.installGithub('https://github.com/demo-owner/link-repo', ['codex'], 'overwrite')`)
+  check('tar.gz 含符号链接条目被拒（I-4）', ghLink.err != null && /链接/.test(ghLink.err), ghLink.err ?? ghLink.ok)
+  check('符号链接 skill 没有装进目标', !existsSync(join(HOME, '.codex/skills/link-skill')))
+  const ghArrow = await caught(`window.warp.skills.installGithub('https://github.com/demo-owner/arrow-repo', ['codex'], 'overwrite')`)
+  check('tar.gz 文件名带 " -> " 不误判为链接', ghArrow.ok?.installed?.includes('codex') === true, ghArrow.err ?? ghArrow.ok)
+  // bsdtar 在 Windows 上把文件名里非法的 > 换成 _（落盘为 "weird -_ name.txt"），只确认文件装进来了
+  const arrowDir = join(HOME, '.codex/skills/arrow-skill')
+  check('带箭头的文件真实装入', existsSync(arrowDir) && readdirSync(arrowDir).some((n) => n.startsWith('weird -')), existsSync(arrowDir) ? readdirSync(arrowDir) : null)
+  const ghAds = await caught(`window.warp.skills.installGithub('https://github.com/demo-owner/ads-repo', ['codex'], 'overwrite')`)
+  check('tar.gz 条目名含冒号（ADS）被拒', ghAds.err != null && /冒号/.test(ghAds.err), ghAds.err ?? ghAds.ok)
+  check('ADS skill 没有装进目标', !existsSync(join(HOME, '.codex/skills/ads-skill')))
+
+  console.log('\n=== 9. M3：zip 安装（一次性 token）+ zip-slip 防护 ===')
+  // MILE_WARP_TEST_ZIP：主进程 pickZip 跳过系统对话框直接用这个路径（每次调用现读，打包后不认）
+  const pick = async (file) => {
+    process.env.MILE_WARP_TEST_ZIP = file
+    return caught(`window.warp.skills.pickZip()`)
+  }
+  const p1 = await pick(GOOD_ZIP)
+  check('pickZip 只返回 token + 文件名，不含路径', p1.ok && typeof p1.ok.token === 'string' && p1.ok.name === 'good-skill.zip' && !JSON.stringify(p1.ok).includes(T.replace(/\\/g, '\\\\')), p1.ok ?? p1.err)
+  const zipInst = await caught(`window.warp.skills.installZip(${JSON.stringify(p1.ok?.token)}, ['agents'], 'overwrite')`)
   check('zip 安装成功', zipInst.ok?.installed?.includes('agents') === true, { ok: zipInst.ok, err: zipInst.err })
   check('my-skill 目录真实存在', existsSync(join(HOME, '.agents/skills/my-skill/SKILL.md')))
+  const reuse = await caught(`window.warp.skills.installZip(${JSON.stringify(p1.ok?.token)}, ['agents'], 'overwrite')`)
+  check('同一 token 不能复用', reuse.err != null && /失效/.test(reuse.err), reuse.err ?? reuse.ok)
+  const forged = await caught(`window.warp.skills.installZip('00000000-0000-4000-8000-000000000000', ['agents'], 'overwrite')`)
+  check('伪造 token 被拒', forged.err != null, forged.err ?? forged.ok)
+  const rawPath = await caught(`window.warp.skills.installZip(${JSON.stringify(GOOD_ZIP)}, ['agents'], 'overwrite')`)
+  check('直接传 zip 路径被拒（旧接口形态）', rawPath.err != null && /不合法/.test(rawPath.err), rawPath.err ?? rawPath.ok)
+  const p2 = await pick(GOOD_ZIP)
+  const badTargets = await caught(`window.warp.skills.installZip(${JSON.stringify(p2.ok?.token)}, [], 'overwrite')`)
+  check('targets 不合法时报错', badTargets.err != null, badTargets.err ?? badTargets.ok)
+  const afterBad = await caught(`window.warp.skills.installZip(${JSON.stringify(p2.ok?.token)}, ['claude'], 'overwrite')`)
+  check('targets 写错不白白作废 token', afterBad.ok?.installed?.includes('claude') === true, afterBad.ok ?? afterBad.err)
 
-  const evil = await caught(`window.warp.skills.installZip(${JSON.stringify(EVIL_ZIP)}, ['agents'], 'overwrite')`)
+  const evilTok = await pick(EVIL_ZIP)
+  const evil = await caught(`window.warp.skills.installZip(${JSON.stringify(evilTok.ok?.token)}, ['agents'], 'overwrite')`)
   check('zip-slip 拒绝（../ 条目）', evil.err != null && /越界|路径/.test(evil.err), evil.err ?? evil.ok)
   // ../evil.txt 若真解出来会落在 %TEMP%（临时目录的上一级是解压根的父级）
   const tmpLeak = join(T, 'evil.txt')
   check('越界文件没有落盘', !existsSync(tmpLeak))
+
+  console.log('\n=== 9.1 zip 符号链接 / 条目数 / 大小上限（I-4） ===')
+  const fx = mkdtempSync(join(T, 'warp-zipfx-'))
+  const LINK_ZIP = join(fx, 'link.zip')
+  writeFileSync(LINK_ZIP, buildEvilZip([
+    { name: 'link-skill/SKILL.md', data: Buffer.from('---\nname: link-skill\n---\n') },
+    { name: 'link-skill/escape', data: Buffer.from('C:/Windows/System32'), attr: (0o120777 << 16) >>> 0 }
+  ]))
+  const MANY_ZIP = join(fx, 'many.zip')
+  writeFileSync(MANY_ZIP, buildEvilZip([
+    { name: 'many/SKILL.md', data: Buffer.from('# M\n') },
+    ...Array.from({ length: 5000 }, (_, i) => ({ name: `many/f${i}.txt`, data: Buffer.from('x') }))
+  ]))
+  const BIG_ZIP = join(fx, 'big.zip')
+  writeFileSync(BIG_ZIP, buildEvilZip([
+    { name: 'big/SKILL.md', data: Buffer.from('# B\n') },
+    { name: 'big/blob.bin', data: Buffer.from('y'), declared: 300 * 1024 * 1024 }
+  ]))
+  const ADS_ZIP = join(fx, 'ads.zip')
+  writeFileSync(ADS_ZIP, buildEvilZip([
+    { name: 'ads-skill/SKILL.md', data: Buffer.from('# A\n') },
+    { name: 'ads-skill/notes.txt:hidden', data: Buffer.from('hidden') }
+  ]))
+  const NUL_ZIP = join(fx, 'nul.zip')
+  writeFileSync(NUL_ZIP, buildEvilZip([
+    { name: 'nul-skill/SKILL.md', data: Buffer.from('# N\n') },
+    { name: 'nul-skill/NUL', data: Buffer.from('x') }
+  ]))
+  const DOT_ZIP = join(fx, 'dot.zip')
+  writeFileSync(DOT_ZIP, buildEvilZip([
+    { name: 'dot-skill/SKILL.md', data: Buffer.from('# D\n') },
+    { name: 'dot-skill/trailing.', data: Buffer.from('x') }
+  ]))
+  for (const [label, file, re, leak] of [
+    ['条目名含冒号（ADS）被拒', ADS_ZIP, /冒号/, '.agents/skills/ads-skill'],
+    ['Windows 保留名 NUL 被拒', NUL_ZIP, /保留名/, '.agents/skills/nul-skill'],
+    ['以点结尾的条目名被拒', DOT_ZIP, /点或空格/, '.agents/skills/dot-skill'],
+    ['符号链接条目被拒', LINK_ZIP, /链接/, '.agents/skills/link-skill'],
+    ['超过 5000 条目被拒', MANY_ZIP, /条目过多/, '.agents/skills/many'],
+    ['声明解压大小超 200MB 被拒', BIG_ZIP, /超过/, '.agents/skills/big']
+  ]) {
+    const t = await pick(file)
+    const r = await caught(`window.warp.skills.installZip(${JSON.stringify(t.ok?.token)}, ['agents'], 'overwrite')`)
+    check(`zip ${label}`, r.err != null && re.test(r.err), r.err ?? r.ok)
+    check(`zip ${label}：目标里没有残留`, !existsSync(join(HOME, leak)))
+  }
+  delete process.env.MILE_WARP_TEST_ZIP
+
+  console.log('\n=== 9.2 调试面门禁（I-1）：未设 MILE_WARP_DEBUG 时没有 __warpDebug ===')
+  check('window.warp.debug 为 false', (await js(`window.warp.debug`)) === false)
+  check('window.__warpDebug 不存在', (await js(`typeof window.__warpDebug`)) === 'undefined')
 
   console.log('\n=== 10. M3：渲染层安装页 ===')
   await js(`[...document.querySelectorAll('button[aria-label*="Skills"]')][0].click()`)

@@ -299,6 +299,9 @@ function TerminalTab({ settings }: { settings: Settings }): React.JSX.Element {
       <Row label="选中即复制" hint="在终端里拖选后自动写入剪贴板" error={copyError}>
         <Switch label="选中即复制" testId="settings-copy-on-select" checked={settings.copyOnSelect} onChange={(v) => void saveCopy({ copyOnSelect: v })} />
       </Row>
+      <Row label="Ctrl+V 粘贴" hint="开了之后 Ctrl+V 直接粘贴给 agent，不再发给终端里的程序" error={copyError}>
+        <Switch label="Ctrl+V 粘贴" testId="settings-paste-on-ctrl-v" checked={settings.pasteOnCtrlV} onChange={(v) => void saveCopy({ pasteOnCtrlV: v })} />
+      </Row>
       <Row label="默认 Shell" hint="「打开 Shell」与 Shell 工作区用它；只列本机已安装的" error={shellError}>
         <select
           aria-label="默认 Shell"

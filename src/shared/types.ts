@@ -84,6 +84,8 @@ export type Settings = {
   fontFamily: string
   scrollback: number
   copyOnSelect: boolean
+  /** Ctrl+V 直接粘贴（升级：抢占 agent 的 quoted-insert / 翻页键）；默认 false 保持 T-18 */
+  pasteOnCtrlV: boolean
   keepShellOnAgentExit: boolean
   restoreOnStartup: boolean
   resumeConversation: boolean
@@ -453,6 +455,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei UI', monospace",
   scrollback: 5000,
   copyOnSelect: true,
+  pasteOnCtrlV: false,
   keepShellOnAgentExit: false,
   restoreOnStartup: false,
   resumeConversation: true,

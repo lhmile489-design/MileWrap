@@ -58,7 +58,6 @@ npx electron scripts/verify-m2-rail.cjs 2>&1 | Out-File "$env:TEMP\warp-m2.log" 
 
 - 开发与构建用 Node 20.19；`npm run build:win`（electron-builder NSIS）需要切 Node 22 LTS。
 - `codex` 只装在 nvm 的 v20.19 全局包里。nvm 切在 22 时 PATH 里没有 codex，M1 harness 的「codex 可用」会失败；临时在当前会话前置 `C:\Users\LHmile\AppData\Local\nvm\v20.19.0` 到 PATH 即可。
-- 本目录不是 git 仓库。
 
 ## 目录结构
 
@@ -104,6 +103,7 @@ README.md        面向使用者的说明（功能、快捷键、数据位置、
 - 版本对齐 Mile Terminal（技术设计 §2），不引入拖拽库、组件库、单元测试框架。
 - 验证用 `scripts/verify-*.cjs`：启动真实 Electron、加载 `out/`、`executeJavaScript` 驱动渲染层，断言读 DOM / IPC 回执，不靠截图。
 - harness 必须在 `require` 主进程包之前 `app.setPath('appData', tmpdir)`，否则会写真实配置。
+- 渲染层调试面 `window.__warpDebug` 只在开发期且 `MILE_WARP_DEBUG=1` 时挂（主进程经 `additionalArguments` 传 `--warp-debug`，preload 暴露只读 `window.warp.debug`）；打包后一律不挂。用到 `__warpDebug` 的 harness 必须在 `require` 主进程包之前设 `process.env.MILE_WARP_DEBUG = '1'`。
 - harness 输出重定向到文件，不用 `| tail`；脚本自带总超时；清理残留 electron 进程前先按命令行确认是本项目的进程。
 - 往源码写转义序列或换行时用独立脚本文件改，改完 `node --check` / `od -c` 检查。
 
@@ -198,7 +198,7 @@ README.md        面向使用者的说明（功能、快捷键、数据位置、
 
 - 目录映射（M0 探针 `scripts/probe-skills.cjs` 本机定稿）：claude `~/.claude/skills`、codex `~/.codex/skills`、全局仓 `~/.agents/skills`（独立一行，trae/qoder 的 skills 是指向它的 symlink）；kimi / pi 无 skill 目录，不列；自定义 agent 不扫。
 - 主进程：`services/SkillsService.ts`（两级扫描对齐 skillkit、无依赖 frontmatter 解析、name 只允许一层且越界拒绝、uninstall / installTo 同名 overwrite 先留 `.bak-<ts>`）；`lib/extractGuard.ts`（zip 逐条目校验 + tar.gz 走系统 bsdtar + 解压后终检）；`lib/githubInstall.ts`（URL 解析矩阵 owner/repo、tree/branch/subpath、git@、短格式；codeload 下载 30s 超时 50MB 上限；harness 用 `MILE_WARP_CODELOAD_OVERRIDE` 指本地 http 假源）。依赖新增 adm-zip（纯 JS）。
-- IPC：`skills:scan / detail / installTo / uninstall / reveal / parseGithubUrl / installGithub / pickZip / installZip`；渲染层只传 agentId + name，zip 路径由主进程对话框选（渲染层拿不到）。
+- IPC：`skills:scan / detail / installTo / uninstall / reveal / parseGithubUrl / installGithub / pickZip / installZip`；渲染层只传 agentId + name。zip 走一次性 token（与 `workspace:pickIcon` 同模式）：`pickZip` 返回 `{ token, name }`，路径留在主进程，`installZip` 收 token，换一次即作废（targets 不合法时不作废）；开发期 `MILE_WARP_TEST_ZIP` 跳过系统对话框（每次调用现读）。解压上限 5000 条目 / 200MB，zip 与 tar 里的符号链接、硬链接、特殊文件一律拒绝（tar 先 `-tvzf` 预检，解压后 lstat 终检）；GitHub 地址里的 `.` / `..` / 空段 / 反斜杠 / `%2e` 在解析前后各查一遍，拼出的子目录再过 `inside`。
 - 渲染层：`components/SkillsDialog.tsx`（lazy chunk；tab 切「我的 Skill / 安装 Skill」；左栏 agent 筛选带品牌图标（skillkit MIT 图标集，补 `global.svg`/`pi.svg`，pi.png 退役）；同名 skill 跨 agent 徽章对照；详情复用预览栏 markdown 管线，首版禁图）；入口标题栏 + `Ctrl+Shift+S` + 命令面板。
 - `npx electron scripts/verify-skills.cjs`（52 项）：扫描（frontmatter / 中文名 / 两级布局 / 悬空 symlink）、detail 越界 ×3、installTo（skip / overwrite+.bak / 未知目标 / 自身）、卸载、URL 解析 ×7、GitHub 安装（本地假源）、zip 安装、**zip-slip 拒绝**（手写 entryName 含 `../` 的 zip 二进制——adm-zip 打包时会规范化路径，夹具必须手写）、渲染层（弹窗 / 搜索 native setter / 详情 / 安装页 / 目标选择）。
 - 首屏 935KB < 950 预算；SkillsDialog chunk 12.4KB。

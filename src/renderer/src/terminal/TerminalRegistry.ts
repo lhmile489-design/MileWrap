@@ -92,7 +92,13 @@ export type ScrollState = { atBottom: boolean; unseen: boolean }
 /** 输入钩子（广播输入，升级建议 3.4）：返回 true = 已处理，不再按普通方式写入 */
 let inputHook: ((id: string, data: string) => boolean) | null = null
 /** 调试计数：onData 触发次数与 hook 拦截次数，返回 false 时记下当时的格位快照（验证脚本用） */
-export const dbgHook = { calls: 0, handled: 0, lastMiss: null as string | null, writes: [] as string[], drops: [] as string[] }
+export const dbgHook = {
+  calls: 0,
+  handled: 0,
+  lastMiss: null as string | null,
+  writes: [] as string[],
+  drops: [] as string[]
+}
 
 function emitScroll(slot: Slot): void {
   const st = { atBottom: slot.atBottom, unseen: slot.unseen }
@@ -233,7 +239,17 @@ function copySelection(term: Terminal): void {
 async function paste(term: Terminal): Promise<void> {
   const text = await window.warp.clipboard.read()
   // paste() 会按 bracketed paste 模式包裹，agent 能区分粘贴与键入
-  if (text) term.paste(text)
+  if (text) {
+    term.paste(text)
+    return
+  }
+  // 剪贴板不是文本：试试图片（截图粘给能读图的 agent，路径作为文本送进终端）
+  try {
+    const file = await window.warp.clipboard.readImage()
+    if (file) term.paste(file)
+  } catch {
+    // 读图失败就当没东西可粘
+  }
 }
 
 function create(id: string): Slot {
@@ -311,7 +327,8 @@ function create(id: string): Slot {
     }
   })
 
-  // 快捷键规则（PRD T-07 / T-18）：只拦 Ctrl+Shift 组合与「有选区的 Ctrl+C」，其余交给 agent
+  // 快捷键规则（PRD T-07 / T-18）：只拦 Ctrl+Shift 组合与「有选区的 Ctrl+C」，其余交给 agent；
+  // 设置开了 pasteOnCtrlV 时 Ctrl+V 也粘贴（抢占 agent 的 quoted-insert / 翻页键）
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== 'keydown') return true
     const key = e.key.toLowerCase()
@@ -320,6 +337,17 @@ function create(id: string): Slot {
       if (key === 'c') copySelection(term)
       else void paste(term)
       return false
+    }
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && key === 'v') {
+      // Ctrl+V：zustand 的 config 里 pasteOnCtrlV 是 true 才拦；
+      // 没开（false）或 config 还没加载（null）就放行走原行为（quoted-insert / PageDown）
+      const memCfg = useConfig.getState().config
+      if (memCfg?.settings.pasteOnCtrlV === true) {
+        e.preventDefault()
+        void paste(term)
+        return false
+      }
+      // 没开 → 不拦
     }
     if (e.ctrlKey && !e.shiftKey && !e.altKey && key === 'c' && term.hasSelection()) {
       e.preventDefault()
@@ -522,39 +550,42 @@ export const terminals = {
 /**
  * 验证脚本用的只读钩子：WebGL 渲染时 DOM 里没有终端文字，harness 只能从这里读。
  * 只读渲染层自己的缓冲区，不暴露任何主进程能力。
+ * 只在主进程判定的调试模式下挂（window.warp.debug：开发期且 MILE_WARP_DEBUG=1）；打包后与普通启动都没有。
  */
-;(
-  window as unknown as {
-    __warpDebug?: {
-      text: (id: string) => string
-      size: (id: string) => { cols: number; rows: number } | null
-      font: (id: string) => { size: number; family: string } | null
-      selection: (id: string) => string
-      layout: () => Record<string, unknown>
-      inputHookActive: () => boolean
-      hookStats: () => { calls: number; handled: number; lastMiss: string | null; writes: string[]; drops: string[] }
-      sessionStore: () => { id: string; status: string }[]
+if (window.warp.debug) {
+  ;(
+    window as unknown as {
+      __warpDebug?: {
+        text: (id: string) => string
+        size: (id: string) => { cols: number; rows: number } | null
+        font: (id: string) => { size: number; family: string } | null
+        selection: (id: string) => string
+        layout: () => Record<string, unknown>
+        inputHookActive: () => boolean
+        hookStats: () => { calls: number; handled: number; lastMiss: string | null; writes: string[]; drops: string[] }
+        sessionStore: () => { id: string; status: string }[]
+      }
     }
+  ).__warpDebug = {
+    text: (id) => terminals.text(id),
+    size: (id) => {
+      const slot = slots.get(id)
+      return slot ? { cols: slot.term.cols, rows: slot.term.rows } : null
+    },
+    font: (id) => {
+      const slot = slots.get(id)
+      return slot ? { size: slot.term.options.fontSize ?? 0, family: slot.term.options.fontFamily ?? '' } : null
+    },
+    selection: (id) => slots.get(id)?.term.getSelection() ?? '',
+    layout: () => {
+      const l = useLayout.getState()
+      const { viewport, fileOverride, railOverride, fileRailVisible, fileRailWidth, sessionRailWidth, sessionRailCollapsed, gridMode, cells, focused } = l
+      return { viewport, fileOverride, railOverride, fileRailVisible, fileRailWidth, sessionRailWidth, sessionRailCollapsed, gridMode, cells, focused, ...railsOf(l) }
+    },
+    inputHookActive: () => inputHook !== null,
+    hookStats: () => ({ ...dbgHook, writes: [...dbgHook.writes], drops: [...dbgHook.drops] }),
+    sessionStore: () => useSessions.getState().sessions.map((s) => ({ id: s.id, status: s.status }))
   }
-).__warpDebug = {
-  text: (id) => terminals.text(id),
-  size: (id) => {
-    const slot = slots.get(id)
-    return slot ? { cols: slot.term.cols, rows: slot.term.rows } : null
-  },
-  font: (id) => {
-    const slot = slots.get(id)
-    return slot ? { size: slot.term.options.fontSize ?? 0, family: slot.term.options.fontFamily ?? '' } : null
-  },
-  selection: (id) => slots.get(id)?.term.getSelection() ?? '',
-  layout: () => {
-    const l = useLayout.getState()
-    const { viewport, fileOverride, railOverride, fileRailVisible, fileRailWidth, sessionRailWidth, sessionRailCollapsed, gridMode, cells, focused } = l
-    return { viewport, fileOverride, railOverride, fileRailVisible, fileRailWidth, sessionRailWidth, sessionRailCollapsed, gridMode, cells, focused, ...railsOf(l) }
-  },
-  inputHookActive: () => inputHook !== null,
-  hookStats: () => ({ ...dbgHook, writes: [...dbgHook.writes], drops: [...dbgHook.drops] }),
-  sessionStore: () => useSessions.getState().sessions.map((s) => ({ id: s.id, status: s.status }))
 }
 
 // 设置变化时同步到所有终端（字号快捷键、设置页）
