@@ -218,6 +218,8 @@ README.md        面向使用者的说明（功能、快捷键、数据位置、
 - 对抗审查（2026-11-06，16 条属实 / 2 条驳回）已修：Esc 先关最上层浮层（`overlayOpen()`）、远端操作中禁用暂存 / 丢弃 / 提交 / 切分支、工作台跟随会话栏选中并在关闭时还原 Git 栏视图、进度订阅移到 store 模块级、取消按仓库根、`remote:` 阶段名、取消后不误报冲突、rebase 冲突单独提示、切分支后刷新格头 pill、历史按 `status.head` 判断重读、标记手动刷新不节流、分支菜单与历史列表方向键导航。
 - 风险确认（审查高危项，decisions 同日）：`services/gitRisk.ts` 只读扫描仓库级（local / worktree）配置与钩子目录，命中 `core.hooksPath`、`filter.*.clean/smudge/process`、`merge.*.driver`、`remote.*.receivepack/uploadpack`、`core.sshCommand/gitProxy/askpass/editor`、`sequence.editor`、`credential.*helper`、`gpg.*program` 或非 `.sample` 钩子时，`GitService.repo()` 拒绝除 probe / risk / trust / cancel 外的一切命令；Git 栏显示确认面板，用户确认后按内容指纹（sha256）记进 `<appData>/mile-warp/git-trust.json`，内容一变重新问。IPC `git:risk / git:trust`（trust 带回指纹、主进程重扫一致才记）。
 - `verify-git.cjs` 211 项（+ G3 历史 / 详情 / 提交内 diff、G-17 / G-18、工作台、右键与格头 pill、7h 风险确认）；全量 `verify:all` 17/18（唯一失败是 m0 探针等真实 codex 进主界面超时，与 Git 无关）；首屏 919KB。
-- 未做：「在目录栏中定位」父目录超过 300 项时定位不到（低优先级）；版本号未改；真实 GitHub 远端未人工验证。
+- 「在目录栏中定位」已支持父目录超过 300 项（自动多显示几页）与缓存里还没有的新文件（重读那一层），`verify-git.cjs` 212 项。
+- 版本号 1.4.1 → 1.5.0（Git 管理），`npm run build:win`（Node 22.23）产出 `release/Mile Warp Setup 1.5.0.exe`（约 99MB，未签名），`verify-package.cjs` 8/8。
+- 待人工确认：真实 GitHub 远端的 fetch / pull / push 与凭据提示；husky / Git LFS 仓库里风险确认面板的打扰程度；`verify-m0-pty` 的 codex 用例（依赖本机真实 codex）。
 
 更新进度时改本节。
