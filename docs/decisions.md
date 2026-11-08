@@ -382,3 +382,51 @@ UI 文档写的是空心方块。实际看下来，空心方块和复选框太�
 2. 恢复候选只增不减：每次退出，没手动关的会话都保持 `open=true`，下次启动没恢复也没忽略的又留着，一键恢复就把所有批次一起拉起。`SessionRecords.archiveStale` 在退出时调用：本次运行开过会话，就把启动时已有的可见候选归档（`open=false`）；本次什么都没开就退出，旧候选原样保留。目录缺失、工作区已删的记录不是可见候选，不动。
 
 否决的方案：启动时就归档（用户还没来得及看恢复卡片，旧会话就丢了）；只保留最近 N 条（N 没有依据，且仍会混批次）。
+
+## 2026-11-03 · 文件预览：首屏 JS 预算 900 → 950KB
+
+决策：预览栏相关增量（PreviewRail + preview store + FileRail/fileActions/App 接线 + .md-body 排版 + 4 个新 icon）≈ 30KB，主包从 ~900KB 涨到 ~930KB。verify-perf 的 `initialJsKB` 抬到 950。
+
+理由：marked（52KB）已独立成 MarkdownView chunk 不进首屏；Phosphor 新 icon 改成 `components/previewIcons.tsx` 只取 regular path（每个 ~0.4KB，省 ~16KB 全套 defs）。剩下的 ~14KB 是预览栏本体（rail 组件 + zustand + 布局字段）确实该占的位置 —— 它是常驻 UI 不是弹窗，不能 lazy。再往下压只能拆通用 helper 或换 icon 库，收益小、复杂度高，不值。
+
+2026-11-04 · Skills 管理不引入 SQLite，扫描即扫即用（文件系统是真相） | 本机 skill 数 < 200（claude 49 + codex 31 + 全局仓 100），实测全量扫描 < 100ms；skillkit 的「内容字段扫描覆盖、来源字段保留」策略里来源元数据量极小，JSON config 的 `skillMeta` 字段够用，省掉 better-sqlite3 的 ABI 重编负担。
+
+2026-11-04 · tar.gz 用系统 bsdtar 而非原生解压库 | Windows 10+ 自带 `C:\Windows\System32\tar.exe`（libarchive 3.8.9，自带路径穿越防护），PATH 里的 Git Bash GNU tar 不用（行为差异）；zip 用纯 JS 的 adm-zip 自己逐条目校验。零原生依赖，不碰 node-pty 式的 Electron ABI 重编。
+
+2026-11-04 · skill 详情首版禁图 | MarkdownView 的相对图片读取按 workspaceId 校验（预览栏契约），skill 没有 workspaceId；为 skill 单开一条受限读取频道收益低（SKILL.md 里图片少），首版让图片读取失败降级为占位文字，P1 再评估要不要专用频道。
+
+2026-11-04 · zip-slip 夹具必须手写 zip 二进制 | adm-zip 的 `addFile('../evil.txt')` 在打包时就把 entryName 规范化成 'evil.txt'——用 adm-zip 造的"恶意包"根本不是 zip-slip，防线等于没测。真夹具要手写 local file header 让 entryName 字面保留 `../`（见 verify-skills.cjs 的 buildEvilZip）。
+
+2026-11-04 · kimi / pi 不列进 Skills 管理 | 本机探针实测 `~/.kimi-code`、`~/.pi` 等候选目录都没有 skills/，硬列会显示空 agent；目录映射表集中在 SkillsService 的 SKILL_ROOTS，将来工具支持了加一行就回来。
+
+2026-11-05 · 调试面 `window.__warpDebug` 加门禁，不用 `import.meta.env.DEV` | harness 跑的是 `out/` 构建产物，DEV 常量在那里恒为 false，用它会让所有 harness 失去调试面。改成主进程判定：`!app.isPackaged && MILE_WARP_DEBUG === '1'` 时经 `webPreferences.additionalArguments` 传 `--warp-debug`，preload 暴露只读 `window.warp.debug`，渲染层据此决定挂不挂。打包后无论环境变量都不挂。顺带删掉 `lastKey`（每次 keydown 记录按键，等于一个按键记录器）和 `setTestConfig`（能绕过主进程校形直接改 zustand 配置）；probe-clipboard 改为点真实设置开关。
+
+2026-11-05 · Skills 解压设硬上限：5000 条目 / 200MB，链接一律拒绝 | 原实现只查条目名，不限条目数和解压总量（解压炸弹），tar 里的符号链接 / 硬链接按名字检查能过、随后被 `cpSync` 原样复制成指向工作区外的链接。zip 先按中央目录声明值预检、写盘时再按实际字节累计（声明值可造假）；tar 先 `tar -tvzf` 预检类型与大小，解压后 `lstat` 遍历终检（junction 在 Node 里报成符号链接，`nlink > 1` 视为硬链接）。看不懂的列表行直接拒绝，宁可误拒。真实 skill 仓库远小于这两个上限，误伤可以忽略。
+
+2026-11-05 · 对抗审查补的三处：codeload 覆盖仅开发期、条目名逐段校验、tar 预检按名单比对 | `MILE_WARP_CODELOAD_OVERRIDE` 原来打包后也认，能把 GitHub 安装悄悄改到任意 http 源，现在与其它 MILE_WARP_TEST_* 一样 `!app.isPackaged` 才认；zip / tar 条目名含 `:`（NTFS 备用数据流，readdir/lstat 看不见、cpSync 会带进目标）、Windows 保留设备名、以点或空格结尾的段一律拒绝；tar 预检原来按行内是否含 " -> " 判断链接，文件名本身带箭头会误拒，改为对照 `tar -tzf` 名单看行尾是不是条目名本身。
+
+2026-11-05 · 放宽「不执行 git」：只在设置「启用 Git 管理」打开后执行，默认关（Git管理-PRD §6.1） | 原决策是为了不碰用户仓库配置和 hooks；但 agent 改完文件后要切工具看 diff、提交，是最高频的出窗口动作。改成显式总开关：关着时应用零 git 进程，行为与之前一致，`GitInfoService` 读 `.git/HEAD` 不变；打开后由主进程按 workspaceId 取目录执行，参数数组 + 环境清洗 + 超时。界面放右栏页签（与预览共用槽位）+ 工作台弹窗，不做格内面板（要把 `cells` 改成联合类型，牵动宫格、恢复、托盘全链路）。主进程用 simple-git（源项目同款，纯 JS、不进渲染包），不引入 better-sqlite3（工作区本身就是仓库登记，省掉原生模块重编）。提交照常跑仓库 hooks，等同用户在命令行提交。升级建议 §3.8 的目录栏改动标记并入（G-18），复用同一次 `git status`。
+
+2026-11-05 · GitService 的 git 子进程固定加 `-c core.fsmonitor=false -c core.quotepath=false` 与 `GIT_OPTIONAL_LOCKS=0` | 仓库配置里的 `core.fsmonitor` 是任意命令，`git status` 会执行它，打开一个不受信任的仓库就等于运行它的代码，所以每条命令都在命令行上把它关掉（命令行 `-c` 优先于仓库配置，verify-git 用恶意配置实测）；quotepath 关掉免得中文路径被转义成八进制；agent 可能同时在同一仓库跑 git，status 不抢 `index.lock`。只认 PATH 里的 `git.exe`，不走 `git.cmd`（要经 cmd.exe）。simple-git 的 `allowUnsafeCustomBinary` / `allowUnsafeFsMonitor` 两个放行是因为：前者的字符校验拒绝 `C:/Program Files/...` 里的空格，路径来自主进程 PATH 查找、不来自渲染层；后者拦的正是我们用来关 fsmonitor 的 `-c core.fsmonitor=false`。
+
+2026-11-05 · git:probe 不返回仓库绝对路径 | 只给 `repoName`（仓库根目录名）和 `relativeDir`（工作区相对仓库根的子目录），与「路径不出主进程」一致；PRD §7 草案里的 `repoRoot` 按代码回写为 `repoName`。
+
+2026-11-06 · 丢弃改动两步走，主进程只认一次性 token | 丢弃会删未跟踪文件且不可恢复。只在渲染层确认的话，渲染层一旦被注入就能跳过确认直接删。改成 `git:discardPrepare` 先列出要丢的文件并发 60 秒一次性 token，`git:discard` 只收 token，文件列表以 prepare 时主进程算出的为准；只接受未暂存组、冲突文件不能丢。
+
+2026-11-06 · git diff 固定加 `--no-ext-diff --no-textconv` | 仓库配置的 `diff.external` 和 `diff.<driver>.textconv` 都是任意命令，和 fsmonitor 一样打开不受信任的仓库就会执行。关掉后二进制文件按 git 原生判定显示为「二进制」，损失可以接受。
+
+2026-11-06 · Git 栏与预览栏共用右栏槽位，不新开第四根栏 | 共用宽度与显隐，`railsOf()` 收让顺序不用加一级；新增 `Layout.rightRailTab` 记住页签。Git 开关关着时右栏和原来的预览栏完全一样（没有页签条）。单击目录栏文件总是切回「预览」页签；Git 页签下 `Ctrl+Shift+G` 收起右栏，否则切到 Git。GitPanel 与 store/git 整包按需加载（25KB），首屏只多页签条和标题栏按钮。
+
+2026-11-06 · 远端 git 子进程固定 `GIT_ALLOW_PROTOCOL=file:git:http:https:ssh` | 仓库配置可以把远端写成 `ext::<任意命令>` 并配 `protocol.ext.allow=always`，fetch / push 时就会执行它（探针实测 pwned）。用环境变量而不是 `-c protocol.*.allow`：simple-git 会拦后者，要放行 `allowUnsafeProtocolOverride`；环境变量优先于仓库配置，探针实测 `ext` 被拒、命令未执行。
+
+2026-11-06 · pull 未配 `pull.rebase` 时补 `--no-rebase`，冲突不当错误 | git 2.27+ 在分叉时若没配 `pull.rebase` 直接报错、不合并，用户在栏里点「拉取」什么都不会发生；补 `--no-rebase` 等于老默认（merge），配过就尊重用户。合并冲突返回 `{ conflict: true }`，改动列表出冲突横条，解决交给编辑器或 agent（PRD G-25）。
+
+2026-11-06 · 分支菜单只列本地分支，首期不做删除 / 合并 / 远端分支检出 | 对齐源项目实际 UI 与 PRD G-26；需要检出远端分支时先 fetch，再在终端里 `git switch <name>`（git 会自动建跟踪分支）。
+
+2026-11-06 · 仓库里会执行命令的配置与钩子：先检测、用户确认信任后才执行（审查高危项，米乐选方案 1） | agent 能改自己工作区的 `.git/config` 与 `.git/hooks`；用户点「拉取 / 推送 / 切分支」时，`filter.*.smudge`、`remote.*.receivepack`、`core.hooksPath` 钩子、`core.sshCommand` 都会在主进程里执行（审查实测）。PRD Q6 只同意过提交时跑钩子。三个方案：检测并确认 / 命令行强制关掉（会破坏 Git LFS 等正常用法）/ 接受现状。选检测并确认：只读扫描 local / worktree 级配置与钩子目录（不跑仓库里的任何东西），命中就拒绝除 probe / risk / trust / cancel 外的命令；Git 栏列出每一项与执行时机，用户确认后按内容指纹记住，内容一变重问。全局 / 系统级配置是用户自己写的，不管。正常仓库没有这些键，不多一步。探针实测 status / diff / add 也会执行 clean 过滤器，所以 status 同样要先过确认；simple-git 拦 `-c filter.*=`，用不了命令行覆盖。
+
+2026-11-06 · Git 工作台与 Git 栏共用 store 的 view，工作台关闭时还原 | 两处都读同一份改动列表与 diff，各存一份要双向同步；共用一份、工作台挂载时记下 Git 栏原视图、卸载时还原，代码最少。
+
+2026-11-06 · 历史页按 `status.head`（HEAD 完整哈希）判断重读 | 原来用 `分支:领先:落后:文件数`，暂存会误触发重读，没有上游的分支上外部提交又感知不到。status 多返回一个 head，变了才重读第一页。
+
+2026-11-06 · 目录栏改动标记放首屏、复用 Git 栏那次 status | 体积很小（一个 store + 节点上一个字母）；Git 栏开着时由它写入，不另跑命令；没开时目录栏自己读一次，同一工作区 2 秒节流，手动刷新不节流。

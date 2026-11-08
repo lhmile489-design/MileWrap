@@ -19,6 +19,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'agents', label: 'Agent' },
   { id: 'notify', label: '通知' },
   { id: 'startup', label: '启动与恢复' },
+  { id: 'git', label: 'Git' },
   { id: 'about', label: '关于' }
 ]
 
@@ -90,6 +91,7 @@ function Panel({ tab, settings, onClose }: { tab: SettingsTab; settings: Setting
             {tab === 'agents' && <AgentsTab />}
             {tab === 'notify' && <NotifyTab settings={settings} />}
             {tab === 'startup' && <StartupTab settings={settings} />}
+            {tab === 'git' && <GitTab settings={settings} />}
             {tab === 'about' && <AboutTab />}
           </div>
         </div>
@@ -296,6 +298,9 @@ function TerminalTab({ settings }: { settings: Settings }): React.JSX.Element {
       </Row>
       <Row label="选中即复制" hint="在终端里拖选后自动写入剪贴板" error={copyError}>
         <Switch label="选中即复制" testId="settings-copy-on-select" checked={settings.copyOnSelect} onChange={(v) => void saveCopy({ copyOnSelect: v })} />
+      </Row>
+      <Row label="Ctrl+V 粘贴" hint="开了之后 Ctrl+V 直接粘贴给 agent，不再发给终端里的程序" error={copyError}>
+        <Switch label="Ctrl+V 粘贴" testId="settings-paste-on-ctrl-v" checked={settings.pasteOnCtrlV} onChange={(v) => void saveCopy({ pasteOnCtrlV: v })} />
       </Row>
       <Row label="默认 Shell" hint="「打开 Shell」与 Shell 工作区用它；只列本机已安装的" error={shellError}>
         <select
@@ -586,6 +591,24 @@ function StartupTab({ settings }: { settings: Settings }): React.JSX.Element {
       <Row label="恢复时续接对话" hint="关闭后恢复只重新启动 agent、开新对话" error={resumeError}>
         <Switch label="恢复时续接对话" testId="settings-resume" checked={settings.resumeConversation} onChange={(v) => void saveResume({ resumeConversation: v })} />
       </Row>
+    </>
+  )
+}
+
+/** Git 管理（Git管理-PRD G-01）：总开关默认关，关着时应用不执行任何 git 命令 */
+function GitTab({ settings }: { settings: Settings }): React.JSX.Element {
+  const [saveEnabled, enabledError] = useSave()
+  const [saveRemote, remoteError] = useSave()
+  return (
+    <>
+      <Row label="启用 Git 管理" hint="打开后可在工作区所在仓库查看改动、提交、切分支与推送；关闭时不执行任何 git 命令，格头分支仍照常显示" error={enabledError}>
+        <Switch label="启用 Git 管理" testId="settings-git-enabled" checked={settings.gitEnabled} onChange={(v) => void saveEnabled({ gitEnabled: v })} />
+      </Row>
+      {settings.gitEnabled && (
+        <Row label="默认远端" hint="分支还没有上游时，推送会自动设到这个远端的同名分支" error={remoteError}>
+          <CommitInput label="默认远端" testId="settings-git-remote" className="w-40 font-mono" value={settings.gitDefaultRemote} onCommit={(v) => saveRemote({ gitDefaultRemote: v.trim() })} />
+        </Row>
+      )}
     </>
   )
 }

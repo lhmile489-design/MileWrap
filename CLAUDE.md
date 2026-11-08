@@ -14,6 +14,8 @@ Mile Warp：Windows 本机桌面应用，集中管理和运行终端类 AI agent
 | `docs/decisions.md` | 决策记录，格式 `日期 · 决策 · 理由`，只记「为什么不那样做」 |
 | `docs/踩坑记录.md` | 按里程碑记录现象、原因、对策 |
 | `docs/升级建议.md` | M5 之后的交互与功能升级建议（分档、成本、实现要点、推进顺序） |
+| `docs/Git管理-PRD.md` | Git 管理（G-）：总开关、右栏 Git 页签、工作台弹窗、安全规则、IPC 草案、G0–G4 里程碑 |
+| `docs/升级路线-2026-11.md` | 2026-11 的功能与交互升级路线：P0 收口 / P1 功能与工程 / P2 / 不做清单 / 拍板问题 |
 
 偏离文档的设计变更要写进 `decisions.md`；踩到的坑写进 `踩坑记录.md`。
 
@@ -32,6 +34,10 @@ npx electron scripts/verify-m3-grid.cjs      # 宫格 / 换格 / 后台保活 / 
 npx electron scripts/verify-m4-restore.cjs   # 关闭确认 / 托盘 / 快照 / 一键恢复与续接（编排 3 次启动，约 1 分钟）
 npx electron scripts/verify-m5-settings.cjs  # 设置 / 主题 / 快捷键 / 命令面板 / 终端搜索
 npx electron scripts/verify-upgrade.cjs      # 升级建议各项（迁移 / 活动 / 自定义 agent / 路径 / 预设 / 广播 / 有更新 / 崩溃重载）
+npx electron scripts/verify-preview.cjs      # 目录栏文件预览（IPC 上限与越界 / md sanitizer / 相对图片 / Esc / 切工作区）
+npx electron scripts/verify-skills.cjs       # Skills 管理（扫描 / 详情 / 卸载 / 跨 agent 安装 / 冲突 .bak / 弹窗与搜索）
+npx electron scripts/verify-git.cjs          # Git 管理（总开关 / probe / status / 暂存 / diff / 丢弃 token / 提交与 hooks / 右栏 Git 页签 / 分支 / fetch pull push / ext:: 拦截）
+node scripts/probe-skills.cjs                # 本机 agent skill 目录探针（只读，M0 定稿目录映射表用）
 npm run verify:all                           # 依次跑全部 harness，日志存 %TEMP%\warp-verify\（M1 需要 PATH 里有 codex）
 npx electron scripts/verify-layout.cjs       # 控件文字不折行、不溢出（多种宽度与格数、各弹窗菜单）
 npx electron scripts/verify-icons.cjs        # 工作区自定义图标（MILE_WARP_TEST_ICON 跳过系统对话框；含配置写失败回滚）
@@ -53,7 +59,6 @@ npx electron scripts/verify-m2-rail.cjs 2>&1 | Out-File "$env:TEMP\warp-m2.log" 
 
 - 开发与构建用 Node 20.19；`npm run build:win`（electron-builder NSIS）需要切 Node 22 LTS。
 - `codex` 只装在 nvm 的 v20.19 全局包里。nvm 切在 22 时 PATH 里没有 codex，M1 harness 的「codex 可用」会失败；临时在当前会话前置 `C:\Users\LHmile\AppData\Local\nvm\v20.19.0` 到 PATH 即可。
-- 本目录不是 git 仓库。
 
 ## 目录结构
 
@@ -99,6 +104,7 @@ README.md        面向使用者的说明（功能、快捷键、数据位置、
 - 版本对齐 Mile Terminal（技术设计 §2），不引入拖拽库、组件库、单元测试框架。
 - 验证用 `scripts/verify-*.cjs`：启动真实 Electron、加载 `out/`、`executeJavaScript` 驱动渲染层，断言读 DOM / IPC 回执，不靠截图。
 - harness 必须在 `require` 主进程包之前 `app.setPath('appData', tmpdir)`，否则会写真实配置。
+- 渲染层调试面 `window.__warpDebug` 只在开发期且 `MILE_WARP_DEBUG=1` 时挂（主进程经 `additionalArguments` 传 `--warp-debug`，preload 暴露只读 `window.warp.debug`）；打包后一律不挂。用到 `__warpDebug` 的 harness 必须在 `require` 主进程包之前设 `process.env.MILE_WARP_DEBUG = '1'`。
 - harness 输出重定向到文件，不用 `| tail`；脚本自带总超时；清理残留 electron 进程前先按命令行确认是本项目的进程。
 - 往源码写转义序列或换行时用独立脚本文件改，改完 `node --check` / `od -c` 检查。
 
@@ -178,5 +184,43 @@ README.md        面向使用者的说明（功能、快捷键、数据位置、
 - 未做：P3 改名与删除、P4 Codex 写库（等计划 §9 拍板）。
 - 版本号 1.1.0 → 1.2.0（换新图标：玻璃终端窗 + 节点徽章，`resources/icon.svg` 为源文件），`npm run build:win`（Node 22.23）产出 `release/Mile Warp Setup 1.2.0.exe`（约 99MB，未签名），`verify-package.cjs` 8/8。
 - 顺带修的既有问题：`verify-perf` 首屏 JS 超预算 → 渲染层 `assetsInlineLimit: 0`（agent 图标不再内联进主包）+ 标题栏/菜单复用已打包图标，回到 ≈900KB 内；`verify-m5` 的「Ctrl+W 窗口没关」断言改成 `!isDestroyed`（窗口被最小化时 `isVisible` 也是 false）；`verify-upgrade` 广播断言改成去换行再比（窄格里 'Q' 在末列 'Z' 折行，`includes('QZ')` 误判，广播功能本身没问题）；`SessionService.flush` 只在输出含可见文字时刷新 `lastOutputAt`（空闲 TUI 的纯转义重绘不再把会话顶成「对话中」）。`__warpDebug` 排障面：`layout()`（布局快照）、`inputHookActive()` / `hookStats()`（onData 计数、hook 拦截、apply 丢弃/切片记录）、`sessionStore()`。全量 `verify:all` 15/15、563/563。
+
+### 文件预览（2026-11-03，技术设计 §6.4 预览栏）
+
+- 目录栏第三根 rail（右侧）：`previewRailWidth`（280–640，默认 380）+ `previewRailVisible` 持久化到 `window-state.json`；预览目标永不持久化。
+- IPC：`fs:readText`（`{workspaceId, relativePath}` → `{content, truncated, binary, size, mtime}`；>2MB 拒、>1MB 截、前 8KB 含 `\0` 标 binary）+ `fs:readImage`（扩展名白名单 png/jpg/jpeg/gif/webp/bmp/ico、>20MB 拒、最长边 >1600 由 nativeImage 缩放）。路径校验复用 `FileTreeService.locate`（realpath 越界拒绝）。
+- 渲染层：`store/preview.ts`（target / loading / result / error，reqId 挡竞态）；`components/PreviewRail.tsx`（aside + RailResizer + 头部 + 三分支占位）；`components/preview/markdown.ts`（marked + DOMParser 白名单 sanitizer，项目唯一 `dangerouslySetInnerHTML` 用点）；`components/preview/MarkdownView.tsx`（React.lazy 分包 52KB，不进首屏）；`components/previewIcons.tsx`（本地 4 个 Phosphor path，省 6 字重 defs ≈16KB）。
+- 交互：单击文件即预览（目录单击仍 toggle）；Esc 关预览（`dialog[open]` 时让位）；切工作区清空；md 相对图片拼 `dirname(rel)+src` 仍走 `fs:readImage`（越界主进程兜）换 data URL；外链 `a[target=_blank rel=noopener]` 点击拦 `shell.openUrl`；外链 `img` CSP 不放行，换成 `[外链图片 …]` 占位。
+- `npx electron scripts/verify-preview.cjs`（35 项）：IPC 上限/越界、md 渲染、sanitizer 剥 script/onclick/onerror/iframe/非 http(s) href、相对图片换 data URL、Esc 关预览、切工作区清空、栏宽持久化、右键菜单。
+- 首屏 JS 预算 900 → 950 KB：marked 是独立 lazy chunk（52KB）不进首屏；新增 ~30KB 是预览栏本身 + store + 布局字段 + md-body CSS + 4 个图标 path。决策记录 2026-11-03。
+- 修了一处：preload 曾把参数发成 `{workspaceId, path}`，`FileTreeService.locate` 要 `relativePath`，改 preload 适配契约（IPC 主进程直接把 arg 透传给 `locate`）。
+
+### Skills 管理（2026-11-04，按 `docs/Skills管理-PRD.md` M0-M4）
+
+- 目录映射（M0 探针 `scripts/probe-skills.cjs` 本机定稿）：claude `~/.claude/skills`、codex `~/.codex/skills`、全局仓 `~/.agents/skills`（独立一行，trae/qoder 的 skills 是指向它的 symlink）；kimi / pi 无 skill 目录，不列；自定义 agent 不扫。
+- 主进程：`services/SkillsService.ts`（两级扫描对齐 skillkit、无依赖 frontmatter 解析、name 只允许一层且越界拒绝、uninstall / installTo 同名 overwrite 先留 `.bak-<ts>`）；`lib/extractGuard.ts`（zip 逐条目校验 + tar.gz 走系统 bsdtar + 解压后终检）；`lib/githubInstall.ts`（URL 解析矩阵 owner/repo、tree/branch/subpath、git@、短格式；codeload 下载 30s 超时 50MB 上限；harness 用 `MILE_WARP_CODELOAD_OVERRIDE` 指本地 http 假源）。依赖新增 adm-zip（纯 JS）。
+- IPC：`skills:scan / detail / installTo / uninstall / reveal / parseGithubUrl / installGithub / pickZip / installZip`；渲染层只传 agentId + name。zip 走一次性 token（与 `workspace:pickIcon` 同模式）：`pickZip` 返回 `{ token, name }`，路径留在主进程，`installZip` 收 token，换一次即作废（targets 不合法时不作废）；开发期 `MILE_WARP_TEST_ZIP` 跳过系统对话框（每次调用现读）。解压上限 5000 条目 / 200MB，zip 与 tar 里的符号链接、硬链接、特殊文件一律拒绝（tar 先 `-tvzf` 预检，解压后 lstat 终检）；GitHub 地址里的 `.` / `..` / 空段 / 反斜杠 / `%2e` 在解析前后各查一遍，拼出的子目录再过 `inside`。
+- 渲染层：`components/SkillsDialog.tsx`（lazy chunk；tab 切「我的 Skill / 安装 Skill」；左栏 agent 筛选带品牌图标（skillkit MIT 图标集，补 `global.svg`/`pi.svg`，pi.png 退役）；同名 skill 跨 agent 徽章对照；详情复用预览栏 markdown 管线，首版禁图）；入口标题栏 + `Ctrl+Shift+S` + 命令面板。
+- `npx electron scripts/verify-skills.cjs`（52 项）：扫描（frontmatter / 中文名 / 两级布局 / 悬空 symlink）、detail 越界 ×3、installTo（skip / overwrite+.bak / 未知目标 / 自身）、卸载、URL 解析 ×7、GitHub 安装（本地假源）、zip 安装、**zip-slip 拒绝**（手写 entryName 含 `../` 的 zip 二进制——adm-zip 打包时会规范化路径，夹具必须手写）、渲染层（弹窗 / 搜索 native setter / 详情 / 安装页 / 目标选择）。
+- 首屏 935KB < 950 预算；SkillsDialog chunk 12.4KB。
+- 未做：P2 的同名对照批量安装、GitHub 来源更新检查、skills.sh 市场、skill 详情图片（首版禁图，P1 再议）。
+- 待人工确认：真实 GitHub 连通性（harness 用本地假源）；真实 agent 是否识别新装的 skill。
+
+### Git 管理（2026-11-05，`docs/Git管理-PRD.md` 定稿 v1.0）
+
+- PRD 已定稿，§10 六个问题全部按草案默认拍板；decisions 同日条目放宽「不执行 git」（仅总开关打开后）。
+- G0 完成：`Settings.gitEnabled`（默认 false）/ `gitDefaultRemote`（默认 origin，拒 `-` 开头）+ 设置页「Git」页签；主进程 `services/GitService.ts`（simple-git，`git.exe` 由 `whichCommand` 从 PATH 找，固定 `-c core.fsmonitor=false -c core.quotepath=false`、`GIT_OPTIONAL_LOCKS=0`、剥 `GIT_EDITOR` 等变量、本地命令 15 秒超时）；IPC `git:probe`（不返回绝对路径）/ `git:status`，开关关着时 probe 返回 disabled、其它一律拒绝。原 `GitInfoService` / `git:branch` 不动。
+- `npx electron scripts/verify-git.cjs`（45 项）：默认关零 git、设置页开关落盘、远端名校形、probe（子目录 / 非仓库 / 越权 id）、status（中文空格路径、重命名带 oldPath、同文件暂存+未暂存两行、删除、detached、远端）、恶意 `core.fsmonitor` 不被执行。首屏 914KB。
+- G1 完成：右栏与预览共用槽位，Git 开关打开时出现「预览 / Git」页签条（`Layout.rightRailTab` 持久化，`showRightTab` / `toggleGitRail`）；入口标题栏按钮、`Ctrl+Shift+G`、命令面板，都只在总开关打开时出现。`components/git/GitPanel.tsx` + `store/git.ts` 整包 lazy（25KB chunk）：改动列表（已暂存 / 未暂存、字母徽标 + 文字标签）、暂存 / 取消 / 丢弃、diff、提交框（草稿 `localStorage` `warp.commitDraft.<id>`）、自动刷新（打开、窗口焦点、会话从对话中转安静，节流 2 秒）。IPC `git:stage / unstage / discardPrepare / discard / diff / commit`；丢弃两步走（prepare 发 60 秒一次性 token，discard 只收 token）；diff 加 `--no-ext-diff --no-textconv`；提交照跑 hooks，失败把输出原样带回。
+- `verify-git.cjs` 105 项（G0 45 + G1 IPC 与渲染层）；首屏 916KB。
+- G2 完成：栏头分支 pill 点开分支菜单（只列本地分支，可搜索，底部新建并切换）；fetch / pull / push 按钮组带落后 / 领先数，没有远端整组禁用；进行中显示中文阶段 + 百分比，1.5 秒后出现「取消」。IPC `git:branches / checkout / createBranch / fetch / pull / push / cancel` + 主进程推送 `git:progress`（100ms 节流）；远端操作按仓库根互斥、5 分钟超时、AbortController 取消。分支名逐个校形并再过 `git check-ref-format`；push 无上游时 `-u <gitDefaultRemote> <分支>`；pull 未配 `pull.rebase` 时补 `--no-rebase`，冲突返回 `conflict` 不抛错；远端子进程固定 `GIT_ALLOW_PROTOCOL=file:git:http:https:ssh`（挡 `ext::` 任意命令传输）。
+- G2 时 `verify-git.cjs` 146 项（+ G2 IPC 与渲染层：分支切换 / 新建 / 非法名、push 自动设上游、进度推送、分叉 push 被拒、pull 冲突、`ext::` 不执行、分支菜单与远端按钮）。
+- G3 完成：`components/git/GitWorkbench.tsx`（lazy chunk 15.7KB）「改动」页（左列表 + 提交框，右 diff）与「历史」页（单列时间线，每页 50 条「加载更多」，提交详情含改动文件与该提交里的 diff、复制完整哈希）；入口 Git 栏头「展开」、命令面板「Git 提交历史」。IPC `git:log / commitDetail / commitFileDiff`（哈希经 `rev-parse` 解析、`-z` 读中文路径、合并提交按第一父提交）。G-05 格头分支 pill 在 Git 开启时是按钮；G-06 工作区右键「Git…」（`actions.openGitFor`）；G-17 改动文件右键「预览文件 / 在目录栏中定位 / 在资源管理器中显示」；G-18 目录栏改动标记 `store/gitMarks.ts`（首屏，复用 Git 栏那次 status；未跟踪目录也标 U）。
+- 对抗审查（2026-11-06，16 条属实 / 2 条驳回）已修：Esc 先关最上层浮层（`overlayOpen()`）、远端操作中禁用暂存 / 丢弃 / 提交 / 切分支、工作台跟随会话栏选中并在关闭时还原 Git 栏视图、进度订阅移到 store 模块级、取消按仓库根、`remote:` 阶段名、取消后不误报冲突、rebase 冲突单独提示、切分支后刷新格头 pill、历史按 `status.head` 判断重读、标记手动刷新不节流、分支菜单与历史列表方向键导航。
+- 风险确认（审查高危项，decisions 同日）：`services/gitRisk.ts` 只读扫描仓库级（local / worktree）配置与钩子目录，命中 `core.hooksPath`、`filter.*.clean/smudge/process`、`merge.*.driver`、`remote.*.receivepack/uploadpack`、`core.sshCommand/gitProxy/askpass/editor`、`sequence.editor`、`credential.*helper`、`gpg.*program` 或非 `.sample` 钩子时，`GitService.repo()` 拒绝除 probe / risk / trust / cancel 外的一切命令；Git 栏显示确认面板，用户确认后按内容指纹（sha256）记进 `<appData>/mile-warp/git-trust.json`，内容一变重新问。IPC `git:risk / git:trust`（trust 带回指纹、主进程重扫一致才记）。
+- `verify-git.cjs` 211 项（+ G3 历史 / 详情 / 提交内 diff、G-17 / G-18、工作台、右键与格头 pill、7h 风险确认）；全量 `verify:all` 17/18（唯一失败是 m0 探针等真实 codex 进主界面超时，与 Git 无关）；首屏 919KB。
+- 「在目录栏中定位」已支持父目录超过 300 项（自动多显示几页）与缓存里还没有的新文件（重读那一层），`verify-git.cjs` 212 项。
+- 版本号 1.4.1 → 1.5.0（Git 管理），`npm run build:win`（Node 22.23）产出 `release/Mile Warp Setup 1.5.0.exe`（约 99MB，未签名），`verify-package.cjs` 8/8。
+- 待人工确认：真实 GitHub 远端的 fetch / pull / push 与凭据提示；husky / Git LFS 仓库里风险确认面板的打扰程度；`verify-m0-pty` 的 codex 用例（依赖本机真实 codex）。
 
 更新进度时改本节。

@@ -1,5 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, screen, shell, type IpcMainInvokeEvent } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 import { CH } from '@shared/channels'
 import type { HistoryResumeResult, Layout, SessionData } from '@shared/types'
@@ -12,7 +14,11 @@ import { SessionService } from './services/SessionService'
 import { WorkspaceService } from './services/WorkspaceService'
 import { WorkspaceIcons } from './services/WorkspaceIcons'
 import { FileTreeService } from './services/FileTreeService'
+import { FilePreviewService } from './services/FilePreviewService'
+import { SkillsService } from './services/SkillsService'
+import { installFromGithub, installFromZip, issueZipToken, parseGithubUrl } from './lib/githubInstall'
 import { GitInfoService } from './services/GitInfoService'
+import { GitService } from './services/GitService'
 import { HISTORY_ID_RE, SessionHistoryService } from './services/SessionHistory'
 import { openExternalTerminal } from './platform/win32/terminal'
 import { initLog, log, logDir } from './lib/log'
@@ -127,7 +133,9 @@ function createWindow(layoutStore: LayoutStore): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      // 调试面（window.__warpDebug）只给验证脚本：开发期且显式设了 MILE_WARP_DEBUG=1 才开，打包后一律关
+      additionalArguments: debugSurfaceEnabled() ? ['--warp-debug'] : []
     }
   })
 
@@ -191,6 +199,11 @@ function createWindow(layoutStore: LayoutStore): void {
   }
 }
 
+/** 渲染层调试面开关：harness 在 require 主进程包之前设 MILE_WARP_DEBUG=1；打包后不认 */
+function debugSurfaceEnabled(): boolean {
+  return !app.isPackaged && process.env['MILE_WARP_DEBUG'] === '1'
+}
+
 app.setAppUserModelId('com.mile.warp')
 
 app.whenReady().then(() => {
@@ -209,7 +222,10 @@ app.whenReady().then(() => {
   const icons = new WorkspaceIcons(join(app.getPath('appData'), 'mile-warp'), testIcon)
   const workspaces = new WorkspaceService(config, icons)
   const files = new FileTreeService(config, (id) => sendToRenderer(CH.fsChanged, id))
+  const preview = new FilePreviewService(files)
   const git = new GitInfoService(config)
+  // 远端进度推送一律走 sendToRenderer（窗口销毁后还在推不会抛错）
+  const gitOps = new GitService(config, (p) => sendToRenderer(CH.gitProgress, p), join(app.getPath('appData'), 'mile-warp'))
   const layout = new LayoutStore(join(app.getPath('appData'), 'mile-warp'))
   sessions.setCellResolver((id) => {
     const l = layout.get()
@@ -367,6 +383,26 @@ app.whenReady().then(() => {
   handle(CH.fsListDir, (arg) => files.list(arg))
   handle(CH.fsReveal, async (arg) => shell.showItemInFolder(await files.resolvePath(arg)))
   handle(CH.gitBranch, (arg) => git.branch(arg))
+  handle(CH.gitProbe, (arg) => gitOps.probe(arg))
+  handle(CH.gitStatus, (arg) => gitOps.status(arg))
+  handle(CH.gitStage, (arg) => gitOps.stage(arg))
+  handle(CH.gitUnstage, (arg) => gitOps.unstage(arg))
+  handle(CH.gitDiscardPrepare, (arg) => gitOps.discardPrepare(arg))
+  handle(CH.gitDiscard, (arg) => gitOps.discard(arg))
+  handle(CH.gitDiff, (arg) => gitOps.diff(arg))
+  handle(CH.gitCommit, (arg) => gitOps.commit(arg))
+  handle(CH.gitBranches, (arg) => gitOps.branches(arg))
+  handle(CH.gitCheckout, (arg) => gitOps.checkout(arg))
+  handle(CH.gitCreateBranch, (arg) => gitOps.createBranch(arg))
+  handle(CH.gitFetch, (arg) => gitOps.fetch(arg))
+  handle(CH.gitPull, (arg) => gitOps.pull(arg))
+  handle(CH.gitPush, (arg) => gitOps.push(arg))
+  handle(CH.gitCancel, (arg) => gitOps.cancel(arg))
+  handle(CH.gitLog, (arg) => gitOps.log(arg))
+  handle(CH.gitCommitDetail, (arg) => gitOps.commitDetail(arg))
+  handle(CH.gitCommitFileDiff, (arg) => gitOps.commitFileDiff(arg))
+  handle(CH.gitRisk, (arg) => gitOps.risk(arg))
+  handle(CH.gitTrust, (arg) => gitOps.trustRepo(arg))
   handle(CH.shellOpenPath, async (arg) => {
     const err = await shell.openPath(workspaceDir(arg))
     if (err) throw new Error(err)
@@ -400,6 +436,8 @@ app.whenReady().then(() => {
       c.settings = { ...c.settings, ...patch }
     })
     if (patch.theme) nativeTheme.themeSource = patch.theme
+    // 打开 Git 开关时重新找 git.exe（用户可能刚装好 Git）
+    if (patch.gitEnabled !== undefined) gitOps.resetBinary()
     return config.toPublic()
   })
   handle(CH.agentShells, () => agents.shells())
@@ -529,6 +567,38 @@ app.whenReady().then(() => {
     return 'reveal'
   })
   handle(CH.fsWatch, (arg) => files.watchDirs(arg))
+  handle(CH.fsReadText, (arg) => preview.readText(arg))
+  handle(CH.fsReadImage, (arg) => preview.readImage(arg))
+
+  const skills = new SkillsService(homedir())
+  handle(CH.skillsScan, () => skills.scan())
+  handle(CH.skillsDetail, (arg) => skills.detail(arg))
+  handle(CH.skillsUninstall, (arg) => skills.uninstall(arg))
+  handle(CH.skillsInstallTo, (arg) => skills.installTo(arg))
+  handle(CH.skillsReveal, (arg) => {
+    const dir = skills.dirOf(arg)
+    shell.showItemInFolder(join(dir, 'SKILL.md'))
+    return 'reveal'
+  })
+  handle(CH.skillsParseGithubUrl, (arg) => {
+    const r = arg && typeof arg === 'object' ? (arg as Record<string, unknown>) : {}
+    return parseGithubUrl(r.url)
+  })
+  handle(CH.skillsInstallGithub, (arg) => installFromGithub(arg))
+  // 路径只留在主进程，渲染层拿一次性 token；MILE_WARP_TEST_ZIP 让验证脚本跳过系统对话框（打包后不认）
+  handle(CH.skillsPickZip, async () => {
+    const testZip = !app.isPackaged ? process.env['MILE_WARP_TEST_ZIP'] || undefined : undefined
+    if (testZip) return issueZipToken(testZip)
+    if (!mainWindow) return null
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: '选择 skill 压缩包',
+      filters: [{ name: 'Skill 压缩包', extensions: ['zip'] }],
+      properties: ['openFile']
+    })
+    if (r.canceled || r.filePaths.length === 0) return null
+    return issueZipToken(r.filePaths[0])
+  })
+  handle(CH.skillsInstallZip, (arg) => installFromZip(arg))
 
   handle(CH.agentSaveCustom, (arg) => {
     const next = workspaces.saveCustomAgent(arg)
@@ -651,6 +721,21 @@ app.whenReady().then(() => {
   handle(CH.clipboardWrite, (arg) => {
     const text = obj(arg).text
     if (typeof text === 'string' && text.length <= 10_000_000) clipboard.writeText(text)
+  })
+  // 图片粘贴（升级）：剪贴板里是图片时存成临时 PNG，返回路径；文本粘贴仍走 clipboard:read
+  handle(CH.clipboardReadImage, () => {
+    const img = clipboard.readImage()
+    // 不检查 isEmpty()：某些 Windows 剪贴板图片 isEmpty 返回 true 但内容有效（探针实测）
+    const { width, height } = img.getSize()
+    const pngBuf = img.toPNG()
+    if (width <= 0 || height <= 0 || pngBuf.length === 0) return null
+    const dir = join(app.getPath('temp'), 'mile-warp-paste')
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, `paste-${Date.now()}.png`)
+    // 超过 1600px 的截图缩一下，agent 读图也更快
+    const out = Math.max(width, height) > 1600 ? img.resize({ width: width >= height ? 1600 : undefined, height: height > width ? 1600 : undefined }) : img
+    writeFileSync(file, out.toPNG())
+    return file
   })
 
   on(CH.windowMinimize, () => mainWindow?.minimize())

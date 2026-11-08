@@ -7,6 +7,18 @@ import type {
   OrphanProcess,
   SessionActivity,
   FileEntry,
+  FileImagePreview,
+  FileTextPreview,
+  GitProbe,
+  GitBranch,
+  GitCommitDetail,
+  GitLogPage,
+  GitDiff,
+  GitDiscardPlan,
+  GitProgress,
+  GitRisk,
+  GitRemoteResult,
+  GitStatus,
   HistoryDetail,
   HistoryExportFormat,
   HistoryListResult,
@@ -16,6 +28,9 @@ import type {
   PublicConfig,
   RestoreCandidate,
   RestoreResult,
+  SkillDetail,
+  SkillsInstallResult,
+  SkillsScanResult,
   Settings,
   SessionBuffer,
   SessionData,
@@ -34,6 +49,8 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): Off {
 type Dims = { cols?: number; rows?: number }
 
 const api = {
+  /** 主进程判定的调试模式（只读；开发期 MILE_WARP_DEBUG=1 才为 true），渲染层据此决定是否挂 __warpDebug */
+  debug: process.argv.includes('--warp-debug'),
   theme: {
     get: (): Promise<'light' | 'dark'> => ipcRenderer.invoke(CH.themeGet),
     onChange: (cb: (theme: 'light' | 'dark') => void): Off => subscribe(CH.themeChanged, cb)
@@ -81,6 +98,11 @@ const api = {
     watch: (workspaceId: string, relativePaths: string[]): Promise<void> =>
       ipcRenderer.invoke(CH.fsWatch, { workspaceId, relativePaths }),
     onChanged: (cb: (workspaceId: string) => void): Off => subscribe(CH.fsChanged, cb),
+    /** 单击文件预览：文本按 UTF-8 读（>2MB 拒、>1MB 截断）；图片缩放后给 data URL */
+    readText: (workspaceId: string, path: string): Promise<FileTextPreview> =>
+      ipcRenderer.invoke(CH.fsReadText, { workspaceId, relativePath: path }),
+    readImage: (workspaceId: string, path: string): Promise<FileImagePreview> =>
+      ipcRenderer.invoke(CH.fsReadImage, { workspaceId, relativePath: path }),
     /** 拖进来的文件 / 文件夹的本机路径（沙箱下 File.path 读不到）；只用来预填表单，主进程再校验 */
     pathForFile: (file: File): string => {
       try {
@@ -91,7 +113,38 @@ const api = {
     }
   },
   git: {
-    branch: (workspaceId: string): Promise<string | null> => ipcRenderer.invoke(CH.gitBranch, { workspaceId })
+    branch: (workspaceId: string): Promise<string | null> => ipcRenderer.invoke(CH.gitBranch, { workspaceId }),
+    /** Git 管理（Git管理-PRD）：settings.gitEnabled 为 false 时 probe 返回 disabled，其它调用直接拒绝 */
+    probe: (workspaceId: string): Promise<GitProbe> => ipcRenderer.invoke(CH.gitProbe, { workspaceId }),
+    status: (workspaceId: string): Promise<GitStatus> => ipcRenderer.invoke(CH.gitStatus, { workspaceId }),
+    /** paths 相对仓库根；空数组 = 全部 */
+    stage: (workspaceId: string, paths: string[]): Promise<void> => ipcRenderer.invoke(CH.gitStage, { workspaceId, paths }),
+    unstage: (workspaceId: string, paths: string[]): Promise<void> => ipcRenderer.invoke(CH.gitUnstage, { workspaceId, paths }),
+    /** 丢弃两步走：先拿确认用的文件列表与一次性 token，用户确认后再用 token 执行 */
+    discardPrepare: (workspaceId: string, paths: string[]): Promise<GitDiscardPlan> =>
+      ipcRenderer.invoke(CH.gitDiscardPrepare, { workspaceId, paths }),
+    discard: (workspaceId: string, token: string): Promise<void> => ipcRenderer.invoke(CH.gitDiscard, { workspaceId, token }),
+    diff: (workspaceId: string, path: string, staged: boolean): Promise<GitDiff> => ipcRenderer.invoke(CH.gitDiff, { workspaceId, path, staged }),
+    commit: (workspaceId: string, summary: string, description: string): Promise<{ hash: string }> =>
+      ipcRenderer.invoke(CH.gitCommit, { workspaceId, summary, description }),
+    /** G2：只列本地分支；切换 / 新建只收分支名，主进程校形 */
+    branches: (workspaceId: string): Promise<GitBranch[]> => ipcRenderer.invoke(CH.gitBranches, { workspaceId }),
+    checkout: (workspaceId: string, branch: string): Promise<void> => ipcRenderer.invoke(CH.gitCheckout, { workspaceId, branch }),
+    createBranch: (workspaceId: string, name: string): Promise<void> => ipcRenderer.invoke(CH.gitCreateBranch, { workspaceId, name }),
+    fetch: (workspaceId: string): Promise<GitRemoteResult> => ipcRenderer.invoke(CH.gitFetch, { workspaceId }),
+    pull: (workspaceId: string): Promise<GitRemoteResult> => ipcRenderer.invoke(CH.gitPull, { workspaceId }),
+    push: (workspaceId: string): Promise<GitRemoteResult> => ipcRenderer.invoke(CH.gitPush, { workspaceId }),
+    cancel: (workspaceId: string): Promise<void> => ipcRenderer.invoke(CH.gitCancel, { workspaceId }),
+    /** G3 历史：当前 HEAD，offset 分页，limit ≤ 100 */
+    log: (workspaceId: string, offset: number, limit = 50): Promise<GitLogPage> => ipcRenderer.invoke(CH.gitLog, { workspaceId, offset, limit }),
+    commitDetail: (workspaceId: string, hash: string): Promise<GitCommitDetail> => ipcRenderer.invoke(CH.gitCommitDetail, { workspaceId, hash }),
+    commitFileDiff: (workspaceId: string, hash: string, path: string, oldPath?: string): Promise<GitDiff> =>
+      ipcRenderer.invoke(CH.gitCommitFileDiff, { workspaceId, hash, path, oldPath }),
+    /** 仓库里会执行命令的配置 / 钩子：未确认时返回风险项，已确认或没有返回 null */
+    risk: (workspaceId: string): Promise<GitRisk | null> => ipcRenderer.invoke(CH.gitRisk, { workspaceId }),
+    /** 确认信任：带回 risk 给的指纹，主进程重扫一致才记下 */
+    trust: (workspaceId: string, fingerprint: string): Promise<void> => ipcRenderer.invoke(CH.gitTrust, { workspaceId, fingerprint }),
+    onProgress: (cb: (p: GitProgress) => void): Off => subscribe(CH.gitProgress, cb)
   },
   agent: {
     list: (): Promise<AgentInfo[]> => ipcRenderer.invoke(CH.agentList),
@@ -176,6 +229,24 @@ const api = {
     resume: (historyId: string, workspaceId?: string, dims: Dims = {}): Promise<HistoryResumeResult> =>
       ipcRenderer.invoke(CH.historyResume, { historyId, workspaceId, ...dims })
   },
+  skills: {
+    scan: (): Promise<SkillsScanResult> => ipcRenderer.invoke(CH.skillsScan),
+    detail: (agentId: string, name: string): Promise<SkillDetail> => ipcRenderer.invoke(CH.skillsDetail, { agentId, name }),
+    installTo: (agentId: string, name: string, targets: string[], onConflict: 'skip' | 'overwrite'): Promise<SkillsInstallResult> =>
+      ipcRenderer.invoke(CH.skillsInstallTo, { agentId, name, targets, onConflict }),
+    uninstall: (agentId: string, name: string): Promise<{ ok: true }> => ipcRenderer.invoke(CH.skillsUninstall, { agentId, name }),
+    reveal: (agentId: string, name: string): Promise<void> => ipcRenderer.invoke(CH.skillsReveal, { agentId, name }),
+    /** 解析 GitHub URL（不下载），给「安装预览」用 */
+    parseGithubUrl: (url: string): Promise<{ owner: string; repo: string; branch: string; subpath: string; canonical: string }> =>
+      ipcRenderer.invoke(CH.skillsParseGithubUrl, { url }),
+    installGithub: (url: string, targets: string[], onConflict: 'skip' | 'overwrite'): Promise<SkillsInstallResult & { parsed: { canonical: string } }> =>
+      ipcRenderer.invoke(CH.skillsInstallGithub, { url, targets, onConflict }),
+    /** 主进程弹对话框选 zip；取消返回 null。路径留在主进程，渲染层只拿一次性 token 和文件名 */
+    pickZip: (): Promise<{ token: string; name: string } | null> => ipcRenderer.invoke(CH.skillsPickZip),
+    /** token 换一次即作废（成功失败都作废），重装要重新 pickZip */
+    installZip: (token: string, targets: string[], onConflict: 'skip' | 'overwrite'): Promise<SkillsInstallResult> =>
+      ipcRenderer.invoke(CH.skillsInstallZip, { token, targets, onConflict })
+  },
   shell: {
     openUrl: (url: string): Promise<void> => ipcRenderer.invoke(CH.shellOpenUrl, { url }),
     openPath: (workspaceId: string): Promise<void> => ipcRenderer.invoke(CH.shellOpenPath, { workspaceId }),
@@ -184,7 +255,9 @@ const api = {
   },
   clipboard: {
     read: (): Promise<string> => ipcRenderer.invoke(CH.clipboardRead),
-    write: (text: string): Promise<void> => ipcRenderer.invoke(CH.clipboardWrite, { text })
+    write: (text: string): Promise<void> => ipcRenderer.invoke(CH.clipboardWrite, { text }),
+    /** 剪贴板里是图片时存成临时 PNG，返回文件路径；没有图片返回 null */
+    readImage: (): Promise<string | null> => ipcRenderer.invoke(CH.clipboardReadImage)
   },
   window: {
     minimize: (): void => ipcRenderer.send(CH.windowMinimize),

@@ -84,6 +84,8 @@ export type Settings = {
   fontFamily: string
   scrollback: number
   copyOnSelect: boolean
+  /** Ctrl+V 直接粘贴（升级：抢占 agent 的 quoted-insert / 翻页键）；默认 false 保持 T-18 */
+  pasteOnCtrlV: boolean
   keepShellOnAgentExit: boolean
   restoreOnStartup: boolean
   resumeConversation: boolean
@@ -101,6 +103,10 @@ export type Settings = {
   lineHeight: number
   cursorStyle: 'block' | 'bar' | 'underline'
   cursorBlink: boolean
+  /** Git 管理总开关（Git管理-PRD G-01）：false 时主进程不执行任何 git 命令 */
+  gitEnabled: boolean
+  /** push 自动设上游时用的远端名（G-24），只允许 [A-Za-z0-9._-] 且不以 - 开头 */
+  gitDefaultRemote: string
 }
 
 export type ResumeMode = 'exact' | 'continue' | 'fresh'
@@ -189,6 +195,152 @@ export type FileEntry = {
   link: boolean
 }
 
+/** fs:readText 的返回值：UTF-8 读文本文件；binary = 内容不是文本（前 8KB 含空字节） */
+export type FileTextPreview = {
+  content: string
+  truncated: boolean
+  binary: boolean
+  size: number
+  mtime: number
+}
+
+/** git:probe 的返回值（Git管理-PRD G-04）。路径不出主进程：只给仓库根名与工作区相对仓库根的子目录 */
+export type GitProbe =
+  | { available: true; repoName: string; relativeDir: string }
+  | { available: false; reason: 'disabled' | 'no-git' | 'not-repo' }
+  | { available: false; reason: 'error'; message: string }
+
+/** 仓库里会执行任意命令的一项配置或钩子（审查 2026-11-06 高危项） */
+export type GitRiskItem = { kind: 'config' | 'hook'; name: string; detail: string; why: string }
+/** git:risk 的返回值：未确认信任（或确认后内容变了）时给出；fingerprint 确认时原样带回 */
+export type GitRisk = { fingerprint: string; items: GitRiskItem[] }
+
+export type GitFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked' | 'conflict'
+
+/** 改动列表的一行。path / oldPath 相对仓库根，斜杠统一为 / */
+export type GitFile = {
+  path: string
+  oldPath?: string
+  status: GitFileStatus
+  staged: boolean
+}
+
+/** git:status 的返回值 */
+export type GitStatus = {
+  /** 当前分支；detached 时为短哈希 */
+  branch: string
+  detached: boolean
+  ahead: number
+  behind: number
+  /** 上游分支名（如 origin/main），没有为 null */
+  upstream: string | null
+  hasRemote: boolean
+  /** HEAD 的完整哈希；还没有提交时为 null。历史页据此判断要不要重读 */
+  head: string | null
+  files: GitFile[]
+}
+
+/** git:diff 的一行；oldNo / newNo 只有对应一侧存在时才有 */
+export type GitDiffLine = { type: 'context' | 'added' | 'removed'; content: string; oldNo: number | null; newNo: number | null }
+export type GitDiffHunk = { header: string; lines: GitDiffLine[] }
+/** git:diff 的返回值：binary / tooLarge（>1MB 或 >5000 行）时 hunks 为空 */
+export type GitDiff = { hunks: GitDiffHunk[]; binary: boolean; tooLarge: boolean; added: number; removed: number }
+
+/** git:discardPrepare 的返回值：确认框列出的文件；token 一次性、60 秒内有效 */
+export type GitDiscardPlan = { token: string; files: { path: string; untracked: boolean }[] }
+
+/** git:branches 的一项（只列本地分支，G-20） */
+export type GitBranch = {
+  name: string
+  current: boolean
+  /** 上游（如 origin/main），没有为 null */
+  upstream: string | null
+  subject: string
+  /** 最近一次提交时间（毫秒） */
+  time: number
+}
+
+export type GitRemoteOp = 'fetch' | 'pull' | 'push'
+
+/** fetch / pull / push 的返回值：pull 产生冲突时 conflict 为 true，不抛错（G-25） */
+export type GitRemoteResult = { conflict: boolean; rebase?: boolean }
+
+/** git:progress 推送（G-23）：stage 是 git 进度行的首词（receiving / writing …），percent 0–100 */
+export type GitProgress = { workspaceId: string; op: GitRemoteOp; stage: string; percent: number }
+
+/** git:log 的一条（G-31）。time 毫秒 */
+export type GitCommit = {
+  hash: string
+  shortHash: string
+  subject: string
+  author: string
+  time: number
+  /** 指向这个提交的分支 / 标签短名（%D 去掉 HEAD ->） */
+  refs: string[]
+}
+
+export type GitLogPage = { commits: GitCommit[]; hasMore: boolean }
+
+/** git:commitDetail 的一个文件；path / oldPath 相对仓库根 */
+export type GitCommitFile = {
+  path: string
+  oldPath?: string
+  status: 'added' | 'modified' | 'deleted' | 'renamed'
+  added: number
+  removed: number
+  binary: boolean
+}
+
+/** git:commitDetail 的返回值（G-32） */
+export type GitCommitDetail = GitCommit & { body: string; email: string; parents: string[]; files: GitCommitFile[] }
+
+/** fs:readImage 的返回值：最长边超 1600px 由主进程等比缩放后的 data URL */
+export type FileImagePreview = {
+  dataUrl: string
+  width: number
+  height: number
+  size: number
+  mtime: number
+}
+
+/** Skills 管理（Skills管理-PRD §5）：一次扫描出的一个 skill */
+export type SkillInfo = {
+  /** skill 根的标识：'claude' | 'codex' | 'agents'（全局仓） */
+  agentId: string
+  /** frontmatter name，缺省用目录名；跨 agent 对照与 IPC 入参都用这个 */
+  name: string
+  description: string | null
+  /** 相对 skill 根目录的路径（/ 分隔）；详情读取走 skills:detail，路径本身不出主进程校验范围 */
+  rel: string
+  sizeBytes: number
+  mtime: number
+  /** 内置 / 受保护 skill 不可卸载 */
+  isBuiltin: boolean
+  source: 'github' | 'zip' | 'copy' | 'manual' | 'builtin'
+  installedAt: number | null
+}
+
+export type SkillsScanResult = {
+  skills: SkillInfo[]
+  scannedAt: number
+  /** 某个 agent 目录读不了不阻塞其他 agent */
+  errors: { agentId: string; message: string }[]
+}
+
+/** skills:detail 的返回值：剥了 frontmatter 的 SKILL.md 正文（>1MB 拒） */
+export type SkillDetail = {
+  filename: string
+  body: string
+  truncated: boolean
+}
+
+/** skills:installTo / skills:installZip 的执行结果 */
+export type SkillsInstallResult = {
+  installed: string[]
+  skipped: string[]
+  failed: { agentId: string; reason: string }[]
+}
+
 /** 会话状态：主进程内存里的运行时状态 */
 export type SessionStatus = 'starting' | 'running' | 'exited' | 'crashed'
 
@@ -251,11 +403,19 @@ export type Layout = {
   sessionRailCollapsed: boolean
   fileRailWidth: number
   fileRailVisible: boolean
+  /** 文件预览栏（目录栏右侧）：宽度与显隐持久化，预览的文件本身不持久化 */
+  previewRailWidth: number
+  previewRailVisible: boolean
+  /** 右栏显示哪个页签（Git管理-PRD §4.1）：预览与 Git 共用右栏槽位、显隐与宽度 */
+  rightRailTab: RightRailTab
   gridMode: GridMode
   cells: Cells
   splitRatioH: number
   splitRatioV: number
 }
+
+export type RightRailTab = 'preview' | 'git'
+export const RIGHT_RAIL_TABS: RightRailTab[] = ['preview', 'git']
 
 /** layout:update 的入参：渲染层能改的字段 */
 export type LayoutPatch = Partial<Omit<Layout, 'width' | 'height' | 'x' | 'y' | 'maximized'>>
@@ -263,6 +423,7 @@ export type LayoutPatch = Partial<Omit<Layout, 'width' | 'height' | 'x' | 'y' | 
 export const LAYOUT_LIMITS = {
   sessionRail: { min: 160, max: 320 },
   fileRail: { min: 180, max: 400 },
+  previewRail: { min: 280, max: 640 },
   ratio: { min: 0.2, max: 0.8 },
   /** 每格最小尺寸（PRD T-02） */
   cell: { width: 360, height: 240 }
@@ -278,6 +439,9 @@ export const DEFAULT_LAYOUT: Layout = {
   sessionRailCollapsed: false,
   fileRailWidth: 240,
   fileRailVisible: true,
+  previewRailWidth: 380,
+  previewRailVisible: false,
+  rightRailTab: 'preview',
   gridMode: 'single',
   cells: [null, null, null, null],
   splitRatioH: 0.5,
@@ -291,6 +455,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei UI', monospace",
   scrollback: 5000,
   copyOnSelect: true,
+  pasteOnCtrlV: false,
   keepShellOnAgentExit: false,
   restoreOnStartup: false,
   resumeConversation: true,
@@ -303,7 +468,9 @@ export const DEFAULT_SETTINGS: Settings = {
   dndEnd: 0,
   lineHeight: 1.5,
   cursorStyle: 'block',
-  cursorBlink: true
+  cursorBlink: true,
+  gitEnabled: false,
+  gitDefaultRemote: 'origin'
 }
 
 /** 本机 agent 的历史会话（会话管理升级计划 §3.1）。路径不出主进程，渲染层只拿 historyId */

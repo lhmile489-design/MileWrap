@@ -61,6 +61,8 @@ const good = {
 writeFileSync(`${CFG}.bak`, JSON.stringify(good, null, 2), 'utf8')
 writeFileSync(CFG, '{ "version": 1, "groups": [ 坏掉的', 'utf8')
 
+// 调试面（window.__warpDebug）只在 MILE_WARP_DEBUG=1 时挂，必须在 require 主进程包之前设
+process.env.MILE_WARP_DEBUG = '1'
 require(join(ROOT, 'out', 'main', 'index.js'))
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -363,7 +365,8 @@ app.whenReady().then(async () => {
   await js(`__t.q('[data-rail="files"] button[aria-label^="刷新"]').click()`)
   check('点刷新后出现', await waitFor(`!!__t.q(${J(tree('NEW.txt'))})`, 3000))
   await openCtx(tree('README.md'))
-  check('节点右键：插入 / 复制路径 / 资源管理器', J(await js('__t.menuItems()')) === J(['插入到当前终端', '复制相对路径', '复制绝对路径', '在资源管理器中显示']), await js('__t.menuItems()'))
+  // v1.4.0 文件预览起，文件节点菜单首项是「预览」
+  check('节点右键：预览 / 插入 / 复制路径 / 资源管理器', J(await js('__t.menuItems()')) === J(['预览', '插入到当前终端', '复制相对路径', '复制绝对路径', '在资源管理器中显示']), await js('__t.menuItems()'))
   await js(`__t.key(document.activeElement, 'Escape')`)
   await waitFor(`!document.querySelector('[role="menu"]')`, 2000)
   const fw = await js(`Math.round(__t.q('[data-rail="files"]').getBoundingClientRect().width)`)

@@ -48,6 +48,8 @@ writeFileSync(
   'utf8'
 )
 
+// 调试面（window.__warpDebug）只在 MILE_WARP_DEBUG=1 时挂，必须在 require 主进程包之前设
+process.env.MILE_WARP_DEBUG = '1'
 require(join(ROOT, 'out', 'main', 'index.js'))
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -181,7 +183,7 @@ app.whenReady().then(async () => {
   await sleep(600)
   await js(`document.querySelector('button[aria-label^="设置"]').click()`)
   await waitFor(`!!document.querySelector('[data-testid="settings-dialog"]')`, 2000)
-  for (const tab of ['appearance', 'terminal', 'agents', 'startup', 'about']) {
+  for (const tab of ['appearance', 'terminal', 'agents', 'startup', 'git', 'about']) {
     await js(`document.querySelector('[data-settings-tab="${tab}"]').click()`)
     await audit(`设置 · ${tab}`)
   }

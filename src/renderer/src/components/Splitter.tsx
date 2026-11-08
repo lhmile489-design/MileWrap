@@ -77,7 +77,7 @@ export function Splitter({
       <span
         aria-hidden="true"
         className={`pointer-events-none rounded-pill transition-colors duration-150 group-hover/split:bg-accent group-focus-visible/split:bg-accent ${
-          dragging ? 'bg-accent' : 'bg-transparent'
+          dragging ? 'bg-accent' : 'bg-line'
         } ${vertical ? 'h-full w-0.5' : 'h-0.5 w-full'}`}
       />
     </div>
@@ -85,8 +85,9 @@ export function Splitter({
 }
 
 /**
- * 栏位右边缘的拖拽条：会话栏 160–320px、目录栏 180–400px（技术设计 §4 LayoutState）。
- * 贴在栏的右边框上，压住 3px，命中区 8px。
+ * 栏位边缘的拖拽条：会话栏 160–320px、目录栏 180–400px、预览栏 280–640px（技术设计 §4 LayoutState）。
+ * 左边栏 side=right：贴右边框；右边栏 side=left：贴左边框。命中区 8px，压住 3px。
+ * 换算：左边栏宽 = clientX - rail.left；右边栏宽 = rail.right - clientX。
  */
 export function RailResizer({
   label,
@@ -94,6 +95,7 @@ export function RailResizer({
   min,
   max,
   onResize,
+  side = 'right',
   testId
 }: {
   label: string
@@ -101,18 +103,20 @@ export function RailResizer({
   min: number
   max: number
   onResize: (px: number) => void
+  /** 栏在画面左侧时贴右边框（默认）；栏在右侧时贴左边框 */
+  side?: 'left' | 'right'
   testId?: string
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   return (
-    <div ref={ref} className="absolute inset-y-0 -right-1 flex">
+    <div ref={ref} className={`absolute inset-y-0 flex ${side === 'right' ? '-right-1' : '-left-1'}`}>
       <Splitter
         orientation="vertical"
         label={label}
         value={((width - min) / (max - min)) * 100}
         onDrag={(x) => {
           const rail = ref.current?.parentElement?.getBoundingClientRect()
-          if (rail) onResize(x - rail.left)
+          if (rail) onResize(side === 'right' ? x - rail.left : rail.right - x)
         }}
         onStep={(d) => onResize(width + d * 16)}
         testId={testId}

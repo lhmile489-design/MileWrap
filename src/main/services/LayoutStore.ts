@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_LAYOUT, LAYOUT_LIMITS, type Cells, type GridMode, type Layout } from '@shared/types'
+import { DEFAULT_LAYOUT, LAYOUT_LIMITS, RIGHT_RAIL_TABS, type Cells, type GridMode, type Layout, type RightRailTab } from '@shared/types'
 import { atomicWrite } from '../lib/atomicWrite'
 
 const GRID_MODES: GridMode[] = ['single', 'dual', 'quad']
@@ -36,6 +36,12 @@ export class LayoutStore {
     if (r.fileRailWidth !== undefined) next.fileRailWidth = int(r.fileRailWidth, LAYOUT_LIMITS.fileRail)
     if (r.sessionRailCollapsed !== undefined) next.sessionRailCollapsed = bool(r.sessionRailCollapsed)
     if (r.fileRailVisible !== undefined) next.fileRailVisible = bool(r.fileRailVisible)
+    if (r.previewRailWidth !== undefined) next.previewRailWidth = int(r.previewRailWidth, LAYOUT_LIMITS.previewRail)
+    if (r.previewRailVisible !== undefined) next.previewRailVisible = bool(r.previewRailVisible)
+    if (r.rightRailTab !== undefined) {
+      if (!RIGHT_RAIL_TABS.includes(r.rightRailTab as RightRailTab)) throw new Error('右栏页签不合法')
+      next.rightRailTab = r.rightRailTab as RightRailTab
+    }
     if (r.gridMode !== undefined) {
       if (!GRID_MODES.includes(r.gridMode as GridMode)) throw new Error('宫格模式不合法')
       next.gridMode = r.gridMode as GridMode
@@ -108,6 +114,9 @@ function normalize(r: Record<string, unknown>): Layout {
     sessionRailCollapsed: r.sessionRailCollapsed === true,
     fileRailWidth: safe(() => int(r.fileRailWidth, LAYOUT_LIMITS.fileRail), d.fileRailWidth),
     fileRailVisible: r.fileRailVisible !== false,
+    previewRailWidth: safe(() => int(r.previewRailWidth, LAYOUT_LIMITS.previewRail), d.previewRailWidth),
+    previewRailVisible: r.previewRailVisible === true,
+    rightRailTab: RIGHT_RAIL_TABS.includes(r.rightRailTab as RightRailTab) ? (r.rightRailTab as RightRailTab) : d.rightRailTab,
     gridMode: GRID_MODES.includes(r.gridMode as GridMode) ? (r.gridMode as GridMode) : d.gridMode,
     cells: safe(() => cells(r.cells), [null, null, null, null]),
     splitRatioH: safe(() => ratio(r.splitRatioH), d.splitRatioH),

@@ -10,7 +10,7 @@ export type WorkspaceDialogState =
  * 不需要持久化的界面状态：会话子行展开、工作区弹窗、广播、长文本输入框。
  * 栏位显隐、栏宽、宫格在 store/layout.ts（写 window-state.json）。
  */
-export type SettingsTab = 'appearance' | 'terminal' | 'agents' | 'notify' | 'startup' | 'about'
+export type SettingsTab = 'appearance' | 'terminal' | 'agents' | 'notify' | 'startup' | 'git' | 'about'
 
 type UiState = {
   /** 展开了会话子行的工作区 */
@@ -36,6 +36,14 @@ type UiState = {
   history: { cwd: string | null } | null
   openHistory: (cwd?: string | null) => void
   closeHistory: () => void
+  /** Skills 管理对话框（Skills管理-PRD §4.1） */
+  skillsOpen: boolean
+  openSkills: () => void
+  closeSkills: () => void
+  /** Git 工作台大弹窗（Git管理-PRD G-30）；null = 关闭，否则是打开的页签 */
+  gitWorkbench: 'changes' | 'history' | null
+  openGitWorkbench: (tab?: 'changes' | 'history') => void
+  closeGitWorkbench: () => void
   setExpanded: (workspaceId: string, open: boolean) => void
   openCreate: (groupId?: string | null, prefill?: { cwd: string; name: string }) => void
   openEdit: (id: string) => void
@@ -63,6 +71,12 @@ export const useUi = create<UiState>((set, get) => ({
   history: null,
   openHistory: (cwd = null) => set({ history: { cwd }, paletteOpen: false }),
   closeHistory: () => set({ history: null }),
+  skillsOpen: false,
+  openSkills: () => set({ skillsOpen: true, paletteOpen: false }),
+  closeSkills: () => set({ skillsOpen: false }),
+  gitWorkbench: null,
+  openGitWorkbench: (tab = 'changes') => set({ gitWorkbench: tab, paletteOpen: false }),
+  closeGitWorkbench: () => set({ gitWorkbench: null }),
   openSettings: (tab = 'appearance') => set({ settingsTab: tab, paletteOpen: false }),
   closeSettings: () => set({ settingsTab: null }),
   setPaletteOpen: (open) => set({ paletteOpen: open }),

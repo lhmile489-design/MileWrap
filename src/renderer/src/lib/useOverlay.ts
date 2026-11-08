@@ -3,6 +3,11 @@ import { useEffect, useRef } from 'react'
 /** 打开中的浮层栈：Esc 只关最上层（UI设计约束 §4.5） */
 const stack: symbol[] = []
 
+/** 有浮层打开（应用级 Esc 等全局快捷键要让位给最上层浮层） */
+export function overlayOpen(): boolean {
+  return stack.length > 0
+}
+
 const FOCUSABLE = 'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 /**

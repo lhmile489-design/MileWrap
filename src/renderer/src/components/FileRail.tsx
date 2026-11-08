@@ -2,8 +2,11 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { ArrowClockwise, ArrowSquareOut, CaretLineLeft, CaretRight } from '@phosphor-icons/react'
 import type { FileEntry } from '@shared/types'
 import { useBranches } from '../store/branches'
+import { MARK_LABEL, useGitMarks } from '../store/gitMarks'
 import { useConfig } from '../store/config'
 import { EMPTY_TREE, joinRel, useFileTree } from '../store/fileTree'
+import { usePreview } from '../store/preview'
+import { PreviewEye } from './previewIcons'
 import { LAYOUT_LIMITS } from '@shared/types'
 import { CELL_COUNT, railsOf, useLayout } from '../store/layout'
 import { useSessions } from '../store/sessions'
@@ -14,6 +17,9 @@ import { fileMenu } from './fileActions'
 import { beginFileDrag } from './rail/drag'
 import { RailResizer } from './Splitter'
 import { IconButton } from './ui'
+
+/** 改动标记颜色：与 Git 栏徽标同一套信号色；字母本身就是文字，不只靠颜色 */
+const MARK_TONE = { M: 'text-warn', A: 'text-live', D: 'text-fault', R: 'text-accent', U: 'text-idle', '!': 'text-fault' } as const
 
 function lastSegment(p: string): string {
   const parts = p.split(/[\\/]+/).filter(Boolean)
@@ -64,6 +70,13 @@ export function FileRail(): React.JSX.Element | null {
     const t = id ? s.trees[id] : undefined
     return t ? Object.keys(t.open).filter((k) => t.open[k]).sort().join('\n') : ''
   })
+  // 目录栏改动标记（Git管理-PRD G-18）：总开关打开时切到工作区读一次；Git 栏开着时由它刷新后写入
+  const gitEnabled = useConfig((s) => s.config?.settings.gitEnabled === true)
+  useEffect(() => {
+    if (!id) return
+    if (gitEnabled && visible) void useGitMarks.getState().load(id)
+    else if (!gitEnabled) useGitMarks.getState().clear(id)
+  }, [id, gitEnabled, visible])
   const stale = useFileTree((s) => Boolean(id && s.stale[id]))
   useEffect(() => {
     if (!visible || !id) return
@@ -113,6 +126,7 @@ export function FileRail(): React.JSX.Element | null {
             if (!workspace) return
             refresh(workspace.id)
             refreshBranch(workspace.id)
+            if (gitEnabled) void useGitMarks.getState().load(workspace.id, true)
           }}
         >
           <ArrowClockwise size={16} />
@@ -224,7 +238,11 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
   const selected = useFileTree((s) => (s.trees[workspaceId]?.selected ?? null) === rel)
   // 键盘焦点所在节点：选中的节点，没有就是根
   const focusable = useFileTree((s) => (s.trees[workspaceId]?.selected ?? '') === rel)
+  // 正在预览的文件：左侧强调线 + Eye（不只靠颜色，UI设计约束 §6）
+  const previewing = usePreview((s) => s.target !== null && s.target.workspaceId === workspaceId && s.target.rel === rel)
   const root = rel === ''
+  // 改动标记：文件按路径标；目录不汇总，但整个未跟踪的目录 git 只报一条 `dir/`，键就是目录本身，照样标 U
+  const mark = useGitMarks((s) => (root ? undefined : s.marks[workspaceId]?.[rel]))
   const Icon = fileIcon(name, kind, open, link)
   const dimmed = isDimmed(name)
 
@@ -242,6 +260,7 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
         onClick={() => {
           select(workspaceId, rel)
           if (isDir) toggle(workspaceId, rel)
+          else if (!link) usePreview.getState().open({ workspaceId, rel, name })
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -249,6 +268,7 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
             e.stopPropagation()
             select(workspaceId, rel)
             if (isDir) toggle(workspaceId, rel)
+            else if (!link) usePreview.getState().open({ workspaceId, rel, name })
           }
         }}
         draggable={!root}
@@ -260,7 +280,7 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
         style={{ '--depth': depth } as React.CSSProperties}
         className={`flex h-7 items-center gap-1 rounded-control pr-2 pl-[calc(4px+var(--depth)*14px)] outline-none transition-colors duration-150 focus-visible:outline-3 focus-visible:outline-offset-[-3px] focus-visible:outline-accent ${
           selected ? 'bg-accent-soft text-ink-strong' : root ? 'bg-raised text-ink-strong hover:bg-raised' : 'text-ink hover:bg-raised'
-        }`}
+        } ${previewing ? 'shadow-[inset_2px_0_0_0_var(--color-accent)]' : ''}`}
       >
         {isDir ? (
           <CaretRight size={16} aria-hidden="true" className={`shrink-0 text-ink-faint transition-transform duration-200 ease-spring ${open ? 'rotate-90' : ''}`} />
@@ -269,6 +289,18 @@ const Node = memo(function Node({ workspaceId, rel, name, kind, link, depth }: N
         )}
         <Icon size={16} aria-hidden="true" className={`shrink-0 ${dimmed || link ? 'text-ink-faint' : 'text-ink-muted'}`} />
         <span className={`truncate text-[13px] ${root ? 'font-semibold' : ''} ${dimmed || link ? 'text-ink-faint' : ''}`}>{name}</span>
+        {previewing && <PreviewEye size={16} aria-hidden="true" className="ml-auto shrink-0 text-accent" />}
+        {mark && (
+          <span
+            role="img"
+            aria-label={`Git：${MARK_LABEL[mark]}`}
+            title={`Git：${MARK_LABEL[mark]}`}
+            data-git-mark={mark}
+            className={`${previewing ? '' : 'ml-auto'} shrink-0 font-mono text-[12px] font-bold ${MARK_TONE[mark]}`}
+          >
+            {mark}
+          </span>
+        )}
       </div>
       {open && <Children workspaceId={workspaceId} rel={rel} depth={depth + 1} />}
     </div>
@@ -281,6 +313,16 @@ function Children({ workspaceId, rel, depth }: { workspaceId: string; rel: strin
   const [limit, setLimit] = useState(PAGE)
   const indent = { '--depth': depth } as React.CSSProperties
   const pad = 'pl-[calc(24px+var(--depth)*14px)]'
+  // 选中项（或它所在的子目录）排在分页之后时自动多显示几页：「在目录栏中定位」等外部定位要能露出它（审查 2026-11-06）
+  const selected = useFileTree((s) => s.trees[workspaceId]?.selected ?? null)
+  const entries = d && d.status === 'ok' ? d.entries : null
+  useEffect(() => {
+    if (!selected || !entries) return
+    const inner = rel ? (selected.startsWith(`${rel}/`) ? selected.slice(rel.length + 1) : null) : selected
+    if (!inner) return
+    const idx = entries.findIndex((e) => e.name === inner.split('/')[0])
+    if (idx >= limit) setLimit(Math.ceil((idx + 1) / PAGE) * PAGE)
+  }, [selected, entries, rel, limit])
 
   if (!d || d.status === 'loading') {
     return (

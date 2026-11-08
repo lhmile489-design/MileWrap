@@ -41,6 +41,8 @@ writeFileSync(
   'utf8'
 )
 
+// 调试面（window.__warpDebug）只在 MILE_WARP_DEBUG=1 时挂，必须在 require 主进程包之前设
+process.env.MILE_WARP_DEBUG = '1'
 require(join(ROOT, 'out', 'main', 'index.js'))
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -162,7 +164,7 @@ app.whenReady().then(async () => {
   await js(`__t.q('main .xterm-helper-textarea').focus()`)
   await keys(',', ['control'])
   check('Ctrl+, 打开设置', await waitFor(`!!__t.q('[data-testid="settings-dialog"]')`, 2000))
-  check('六个页签', J(await js(`__t.qa('[data-testid="settings-dialog"] [role="tab"]').map((t) => t.textContent)`)) === J(['外观', '终端', 'Agent', '通知', '启动与恢复', '关于']))
+  check('七个页签', J(await js(`__t.qa('[data-testid="settings-dialog"] [role="tab"]').map((t) => t.textContent)`)) === J(['外观', '终端', 'Agent', '通知', '启动与恢复', 'Git', '关于']))
   await js(`__t.radio('[data-testid="settings-theme"]', 'dark')`)
   check('切深色：data-theme = dark，落盘', (await waitFor(`document.documentElement.dataset.theme === 'dark'`, 3000)) && settings().theme === 'dark')
   await js(`__t.radio('[data-testid="settings-theme"]', 'light')`)

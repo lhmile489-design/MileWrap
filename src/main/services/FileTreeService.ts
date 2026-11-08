@@ -103,7 +103,8 @@ export class FileTreeService {
     this.watchers.clear()
   }
 
-  private async locate(input: unknown): Promise<{ root: string; target: string }> {
+  /** 校验 workspaceId + 相对路径，返回工作区根与目标绝对路径（文件预览也复用这一套越界校验） */
+  async locate(input: unknown): Promise<{ root: string; target: string }> {
     const r = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
     const workspaceId = r.workspaceId
     if (typeof workspaceId !== 'string') throw new Error('workspaceId 不合法')

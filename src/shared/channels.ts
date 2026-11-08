@@ -24,6 +24,33 @@ export const CH = {
   fsListDir: 'fs:listDir',
   fsReveal: 'fs:reveal',
   gitBranch: 'git:branch',
+  /** Git 管理（Git管理-PRD §7）：渲染层只传 workspaceId，仓库目录由主进程从配置求；gitEnabled 为 false 时一律拒绝 */
+  gitProbe: 'git:probe',
+  gitStatus: 'git:status',
+  gitStage: 'git:stage',
+  gitUnstage: 'git:unstage',
+  /** 丢弃两步走：prepare 返回要确认的文件与一次性 token，discard 只收 token */
+  gitDiscardPrepare: 'git:discardPrepare',
+  gitDiscard: 'git:discard',
+  gitDiff: 'git:diff',
+  gitCommit: 'git:commit',
+  /** G2：分支与远端 */
+  gitBranches: 'git:branches',
+  gitCheckout: 'git:checkout',
+  gitCreateBranch: 'git:createBranch',
+  gitFetch: 'git:fetch',
+  gitPull: 'git:pull',
+  gitPush: 'git:push',
+  gitCancel: 'git:cancel',
+  /** 主进程推送：远端操作进度 */
+  gitProgress: 'git:progress',
+  /** G3：历史与提交详情 */
+  gitLog: 'git:log',
+  gitCommitDetail: 'git:commitDetail',
+  gitCommitFileDiff: 'git:commitFileDiff',
+  /** 仓库里会执行命令的配置 / 钩子：先查，用户确认后按指纹记住 */
+  gitRisk: 'git:risk',
+  gitTrust: 'git:trust',
   shellOpenPath: 'shell:openPath',
   shellOpenExternalTerminal: 'shell:openExternalTerminal',
 
@@ -68,6 +95,8 @@ export const CH = {
   shellOpenUrl: 'shell:openUrl',
   clipboardRead: 'clipboard:read',
   clipboardWrite: 'clipboard:write',
+  /** 剪贴板里有图片时存成临时 PNG，返回文件路径（粘给能读图的 agent） */
+  clipboardReadImage: 'clipboard:readImage',
 
   /** 活动指示与通知（升级建议 2.1 / 2.2 / 2.3） */
   sessionActivity: 'session:activity',
@@ -86,6 +115,9 @@ export const CH = {
   fsEditorAvailable: 'fs:editorAvailable',
   fsWatch: 'fs:watch',
   fsChanged: 'fs:changed',
+  /** 文件预览（目录栏单击文件）：文本按 UTF-8 读，图片转缩放后的 data URL */
+  fsReadText: 'fs:readText',
+  fsReadImage: 'fs:readImage',
 
   /** 自定义 agent（PRD A-03）与布局预设（升级建议 3.1） */
   agentSaveCustom: 'agent:saveCustom',
@@ -108,6 +140,18 @@ export const CH = {
   historyExport: 'history:export',
   historyReveal: 'history:reveal',
   historyResume: 'history:resume',
+
+  /** Skills 管理（Skills管理-PRD）：渲染层只传 agentId + skillName，路径不出主进程 */
+  skillsScan: 'skills:scan',
+  skillsDetail: 'skills:detail',
+  skillsInstallTo: 'skills:installTo',
+  skillsUninstall: 'skills:uninstall',
+  skillsReveal: 'skills:reveal',
+  skillsParseGithubUrl: 'skills:parseGithubUrl',
+  skillsInstallGithub: 'skills:installGithub',
+  /** 主进程弹文件对话框选 zip，渲染层只拿一次性 token（与 workspace:pickIcon 同模式），installZip 收 token */
+  skillsPickZip: 'skills:pickZip',
+  skillsInstallZip: 'skills:installZip',
 
   windowMinimize: 'window:minimize',
   windowMaximize: 'window:maximize',

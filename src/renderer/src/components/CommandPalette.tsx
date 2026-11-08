@@ -119,6 +119,10 @@ function buildItems(): Item[] {
   act('grid-quad', '布局：四宫格', 'grid layout 4 quad', () => l.setGridMode('quad'))
   act('toggle-rail', '显示 / 收起会话栏', 'sidebar rail ctrl+shift+b', () => l.toggleRail())
   act('toggle-files', '显示 / 隐藏目录栏', 'files tree ctrl+shift+e', () => l.toggleFileRail())
+  if (cfg?.settings.gitEnabled) {
+    act('toggle-git', '打开 / 关闭 Git 栏', 'git status commit diff ctrl+shift+g', () => l.toggleGitRail())
+    act('git-history', 'Git 提交历史', 'git log history commit lishi', () => ui.openGitWorkbench('history'))
+  }
   const fs = focusedSession()
   if (fs) act('find', '在当前终端中搜索', 'search find ctrl+shift+f', () => ui.setSearchCell(l.focused))
   act('theme-system', '主题：跟随系统', 'theme system', () => setTheme('system'))
@@ -127,6 +131,7 @@ function buildItems(): Item[] {
   const n = useRestore.getState().candidates.length
   if (n > 0) act('restore', `恢复上次的 ${n} 个会话…`, 'restore resume huifu', () => useRestore.getState().setDialogOpen(true))
   act('history', '会话历史…', 'history lishi huihua ctrl+shift+h', () => ui.openHistory())
+  act('skills', 'Skills 管理…', 'skills jineng bauctrl+shift+s', () => ui.openSkills())
   act('settings', '打开设置', 'settings preferences ctrl+,', () => ui.openSettings())
   act('shortcuts', '快捷键速查', 'shortcuts keys ctrl+/ kuaijiejian', () => ui.setShortcutsOpen(true))
   act('broadcast', ui.broadcast ? '关闭广播输入' : '开启广播输入…', 'broadcast guangbo', () => void toggleBroadcast())

@@ -249,6 +249,8 @@ async function phase(n) {
   // 必须在 require 主进程包之前，否则读写的是真实 %APPDATA%
   app.setPath('appData', p.sandbox)
   const cfgAtStart = readJson(p.cfg)
+  // 调试面（window.__warpDebug）只在 MILE_WARP_DEBUG=1 时挂，必须在 require 主进程包之前设
+  process.env.MILE_WARP_DEBUG = '1'
   require(join(ROOT, 'out', 'main', 'index.js'))
   await app.whenReady()
   const win = BrowserWindow.getAllWindows()[0]

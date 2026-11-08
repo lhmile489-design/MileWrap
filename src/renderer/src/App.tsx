@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from 'react'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { useConfig } from './store/config'
 import { useFileTree } from './store/fileTree'
+import { usePreview } from './store/preview'
 import { useLayout, visibleCount } from './store/layout'
 import { useSessions } from './store/sessions'
 import { useUi } from './store/ui'
@@ -9,6 +10,7 @@ import { terminals, dbgHook } from './terminal/TerminalRegistry'
 import { TitleBar } from './components/TitleBar'
 import { SessionRail } from './components/SessionRail'
 import { FileRail } from './components/FileRail'
+import { PreviewRail } from './components/PreviewRail'
 import { Grid } from './components/Grid'
 import { MenuHost } from './components/Menu'
 import { PromptHost } from './components/PromptDialog'
@@ -19,6 +21,7 @@ import { focusCell, showSession } from './components/actions'
 import { useRestore } from './store/restore'
 import { useActivity } from './store/activity'
 import { ShortcutsSheet } from './components/ShortcutsSheet'
+import { overlayOpen } from './lib/useOverlay'
 import { confirm } from './components/ConfirmDialog'
 
 /**
@@ -29,10 +32,14 @@ const loadSettings = (): Promise<typeof import('./components/SettingsDialog')> =
 const loadPalette = (): Promise<typeof import('./components/CommandPalette')> => import('./components/CommandPalette')
 const loadWorkspaceDialog = (): Promise<typeof import('./components/WorkspaceDialog')> => import('./components/WorkspaceDialog')
 const loadHistory = (): Promise<typeof import('./components/HistoryDialog')> => import('./components/HistoryDialog')
+const loadSkills = (): Promise<typeof import('./components/SkillsDialog')> => import('./components/SkillsDialog')
 const SettingsDialog = lazy(() => loadSettings().then((m) => ({ default: m.SettingsDialog })))
 const HistoryDialog = lazy(() => loadHistory().then((m) => ({ default: m.HistoryDialog })))
+const SkillsDialog = lazy(() => loadSkills().then((m) => ({ default: m.SkillsDialog })))
 const CommandPalette = lazy(() => loadPalette().then((m) => ({ default: m.CommandPalette })))
 const WorkspaceDialog = lazy(() => loadWorkspaceDialog().then((m) => ({ default: m.WorkspaceDialog })))
+/** Git 工作台（Git管理-PRD G-30）：整包按需加载，不进首屏 */
+const GitWorkbench = lazy(() => import('./components/git/GitWorkbench').then((m) => ({ default: m.GitWorkbench })))
 
 export function preloadDialogs(): void {
   void loadSettings()
@@ -53,6 +60,19 @@ function bumpFont(delta: number): void {
 }
 
 function onShortcut(e: KeyboardEvent): void {
+  if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+    // 弹窗自己吃 Esc（浏览器默认行为不关 dialog），预览栏开着才拦
+    if (document.querySelector('dialog[open]')) return
+    // 工作台、分支菜单等浮层开着时 Esc 归最上层浮层（审查 2026-11-06）
+    if (overlayOpen()) return
+    const p = usePreview.getState()
+    if (p.target) {
+      p.close()
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    return
+  }
   if (!e.ctrlKey || e.altKey || e.metaKey) return
   const l = useLayout.getState()
   const ui = useUi.getState()
@@ -82,6 +102,14 @@ function onShortcut(e: KeyboardEvent): void {
     // 会话历史（会话管理升级计划 §3.5）
     if (ui.history) ui.closeHistory()
     else ui.openHistory()
+  } else if (code === 'KeyS') {
+    // Skills 管理（Skills管理-PRD §4.1）
+    if (ui.skillsOpen) ui.closeSkills()
+    else ui.openSkills()
+  } else if (code === 'KeyG') {
+    // Git 栏（Git管理-PRD G-02）：总开关关着时不拦截，按键照常交给终端
+    if (useConfig.getState().config?.settings.gitEnabled !== true) return
+    l.toggleGitRail()
   } else if (code === 'KeyF') {
     // 终端内搜索（PRD T-12）：只对聚焦格里有会话时生效
     if (!l.cells[l.focused]) return
@@ -127,6 +155,9 @@ export default function App(): React.JSX.Element {
   const settingsOpen = useUi((s) => s.settingsTab !== null)
   const paletteOpen = useUi((s) => s.paletteOpen)
   const historyOpen = useUi((s) => s.history !== null)
+  const skillsOpen = useUi((s) => s.skillsOpen)
+  const workbenchOpen = useUi((s) => s.gitWorkbench !== null)
+  const gitEnabled = useConfig((s) => s.config?.settings.gitEnabled === true)
 
   useEffect(() => {
     void loadConfig()
@@ -282,6 +313,17 @@ export default function App(): React.JSX.Element {
     if (selectedWorkspaceId && !ids.has(selectedWorkspaceId)) selectWorkspace(null)
   }, [config, selectedWorkspaceId, selectWorkspace])
 
+  // 切工作区 / 工作区被删：清空预览内容（预览目标不持久化，栏宽偏好不动）
+  useEffect(() => {
+    if (!config) return
+    const p = usePreview.getState()
+    if (p.target && !config.workspaces.some((w) => w.id === p.target!.workspaceId)) p.clear()
+  }, [config])
+  useEffect(() => {
+    const p = usePreview.getState()
+    if (p.target && p.target.workspaceId !== selectedWorkspaceId) p.clear()
+  }, [selectedWorkspaceId])
+
   return (
     <div className="flex h-full flex-col bg-canvas font-sans text-ink">
       <TitleBar />
@@ -289,12 +331,15 @@ export default function App(): React.JSX.Element {
         <SessionRail />
         <FileRail />
         <Grid />
+        <PreviewRail />
       </div>
       {/* 各自一个 Suspense：一个还在加载时不会把另一个已打开的弹窗藏起来 */}
       <Suspense fallback={null}>{dialog && <WorkspaceDialog state={dialog} onClose={closeDialog} />}</Suspense>
       <Suspense fallback={null}>{settingsOpen && <SettingsDialog />}</Suspense>
       <Suspense fallback={null}>{paletteOpen && <CommandPalette />}</Suspense>
       <Suspense fallback={null}>{historyOpen && <HistoryDialog />}</Suspense>
+      <Suspense fallback={null}>{skillsOpen && <SkillsDialog />}</Suspense>
+      <Suspense fallback={null}>{workbenchOpen && gitEnabled && <GitWorkbench />}</Suspense>
       <PromptHost />
       <RestoreDialog />
       <QuitDialog />

@@ -7,6 +7,7 @@ import {
   FloppyDisk,
   FolderSimple,
   Gear,
+  GitBranch,
   GridFour,
   Layout,
   MagnifyingGlass,
@@ -15,6 +16,7 @@ import {
   SidebarSimple,
   Square,
   Sun,
+  SquaresFour,
   X,
   type Icon
 } from '@phosphor-icons/react'
@@ -70,7 +72,12 @@ export function TitleBar(): React.JSX.Element {
   const broadcast = useUi((s) => s.broadcast)
   const openSettings = useUi((s) => s.openSettings)
   const openHistory = useUi((s) => s.openHistory)
+  const openSkills = useUi((s) => s.openSkills)
   const theme = useConfig((s) => s.config?.settings.theme ?? 'system')
+  // Git 栏入口只在设置「启用 Git 管理」打开后出现（Git管理-PRD G-02）
+  const gitEnabled = useConfig((s) => s.config?.settings.gitEnabled === true)
+  const gitShown = useLayout((s) => s.rightRailTab === 'git' && railsOf(s).previewShown)
+  const toggleGitRail = useLayout((s) => s.toggleGitRail)
   const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Desktop
 
   return (
@@ -86,6 +93,11 @@ export function TitleBar(): React.JSX.Element {
         <IconButton label="目录栏（Ctrl+Shift+E）" pressed={fileShown} onClick={toggleFileRail}>
           <FolderSimple size={16} />
         </IconButton>
+        {gitEnabled && (
+          <IconButton label="Git 栏（Ctrl+Shift+G）" pressed={gitShown} onClick={toggleGitRail}>
+            <GitBranch size={16} />
+          </IconButton>
+        )}
         {/* 宫格切换（PRD T-02）：分段控件，方向键在三项之间移动 */}
         <div
           role="radiogroup"
@@ -123,7 +135,7 @@ export function TitleBar(): React.JSX.Element {
           })}
         </div>
       </div>
-      <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2">
+      <div className="app-no-drag flex min-w-0 flex-1 items-center justify-center gap-2 px-2">
         {/* 全局搜索触发框（UI设计约束 §4.4）：点开是命令面板 */}
         <button
           type="button"
@@ -146,6 +158,9 @@ export function TitleBar(): React.JSX.Element {
         </IconButton>
         <IconButton label="会话历史（Ctrl+Shift+H）" onClick={() => openHistory()}>
           <ArrowCounterClockwise size={16} />
+        </IconButton>
+        <IconButton label="Skills 管理（Ctrl+Shift+S）" onClick={() => openSkills()}>
+          <SquaresFour size={16} />
         </IconButton>
       </div>
       <div className="app-no-drag flex items-center gap-0.5 pr-1">

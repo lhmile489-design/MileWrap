@@ -10,6 +10,16 @@ Windows 本机桌面应用，集中管理和运行终端类 AI agent：Claude Co
 - **目录栏**：当前工作区目录的只读文件树，懒加载。已展开的目录有变化时头部提示「有更新」，点刷新才重读。右键可复制相对 / 绝对路径、插入到当前终端（Claude 用 `@相对路径`），也可以把文件直接拖到终端格。只能浏览工作区目录之内，符号链接跳出目录时不展开。
 - **宫格控制台**：1 / 2 / 4 格切换，分隔条可拖，每格不小于 360×240。会话可以拖到任意格，格头拖到另一格即两格互换。切到少格时，隐藏的会话在后台继续运行。
 - **终端**：基于 ConPTY 的真实伪终端，agent 直接作为进程启动（不先开 shell），能拿到准确的退出码。npm 生成的 `.cmd` 壳会还原成 `node + js` 或 exe 再启动，避免 `Terminate batch job (Y/N)?`。支持选中即复制、终端内搜索、可点击链接、字号调整。
+- **文件预览**：目录栏单击文件即在右侧预览栏查看。Markdown 渲染成排版（标题、列表、表格、代码块，sanitize 白名单清洗），图片显示缩略图，文本 / 代码等宽显示，二进制与超大文件有占位提示。Markdown 里的相对图片按文档所在目录解析后显示。
+- **Skills 管理**：`Ctrl+Shift+S` 集中管理本机 agent（Claude Code、Codex、全局仓库 `~/.agents/skills`）的 skill。跨 agent 扫描列表（名称、描述、大小、品牌图标）、搜索、详情渲染 SKILL.md；一键安装到其他 agent（同名先备份 `.bak-时间戳`）；从 GitHub 仓库地址或本地 zip 安装（解压逐条目校验路径穿越，`../` 条目直接拒绝）。kimi / Pi 未发现 skill 目录，暂不显示。
+- **会话历史**：`Ctrl+Shift+H` 按目录浏览本机各 agent 的历史会话，预览渲染、导出 `.txt` / `.md`、一键续接。
+- **Git 管理**（默认关，设置 → Git 里打开）：关着时应用不执行任何 git 命令。打开后右栏多一个「Git」页签（`Ctrl+Shift+G`、标题栏按钮、格头分支 pill、工作区右键「Git…」都能打开），跟随当前工作区所在的仓库：
+  - 改动列表分「已暂存 / 未暂存」，字母徽标加文字标签；暂存、取消暂存、丢弃（先确认，未跟踪文件写明「会删除」）；点文件看 diff。
+  - 提交框：摘要 + 可选描述，`Ctrl+Enter` 提交，草稿按工作区保留；照常运行仓库的 hooks，失败时显示钩子输出。
+  - 分支菜单（搜索、切换、新建并切换）；fetch / pull / push 带落后 / 领先数、中文阶段进度和取消；首次推送自动设上游；pull 冲突时冲突文件置顶提示。
+  - 栏头「展开」打开 Git 工作台：宽屏看改动与 diff，「历史」页看提交列表（每页 50 条）、提交详情和每个文件的 diff，可复制哈希。
+  - 目录栏给改过的文件标 M / A / D / U / !，复用同一次 `git status`。
+  - 凭据交给系统凭据管理器或 SSH agent，应用不弹密码框、不存凭据。
 - **关闭与托盘**：有会话在运行时关窗口会询问「最小化到托盘」还是「全部结束并退出」，可以记住选择。最小化到托盘后会话继续运行。
 - **一键恢复与续接**：会话快照随会话生命周期即时写盘。下次启动时，控制台出现「恢复上次的 N 个会话」，按原格位重新启动并续接对话：Claude 用 `--resume <uuid>`，Codex 用 `resume <id>`，Kimi 用 `--session <id>`。拿不到会话 ID、又有可能把两个会话串到同一段对话上时，标为「新开」，不静默续接。
 - **命令面板**：搜索工作区、会话与动作（切换布局、主题、打开设置等），支持拼音首字母（`khd` 搜到「客户端」），不输入时最近用过的排最前，「在第 N 格打开…」可以再选工作区。
@@ -27,6 +37,9 @@ Windows 本机桌面应用，集中管理和运行终端类 AI agent：Claude Co
 | 组合 | 作用 |
 | --- | --- |
 | `Ctrl+Shift+K` | 命令面板 |
+| `Ctrl+Shift+S` | Skills 管理 |
+| `Ctrl+Shift+H` | 会话历史 |
+| `Ctrl+Shift+G` | Git 栏（需在设置里启用 Git 管理） |
 | `Ctrl+/` | 快捷键速查 |
 | `Ctrl+Shift+I` | 长文本输入框 |
 | `Ctrl+,` | 设置 |
@@ -52,6 +65,7 @@ Windows 本机桌面应用，集中管理和运行终端类 AI agent：Claude Co
 - 工作区环境变量的值用 Windows DPAPI（Electron `safeStorage`）加密落盘，界面上只显示变量名。
 - 渲染进程没有 Node 能力（上下文隔离 + 沙箱），只能通过白名单 IPC 调用主进程。启动会话只传工作区 id，可执行文件、参数、目录全部由主进程从配置读取；默认 Shell 只能从本机探测到的几项里选。
 - 外部链接只放行 http / https，交给系统浏览器打开。
+- Git 管理：渲染层只传工作区 id 和相对仓库根的路径，越出仓库的路径一律拒绝。每条 git 命令固定关掉仓库配置里能执行任意命令的项（`core.fsmonitor`、外部 diff、textconv），远端只允许 file / git / http / https / ssh 协议（挡住 `ext::`）；丢弃改动要先拿主进程发的一次性确认 token。
 - 应用不联网同步，不读取、不保存任何 agent 的密钥。续接对话只读 `~/.codex/sessions` 与 `~/.kimi-code/session_index.jsonl` 里的会话 ID。
 
 ## 开发
@@ -82,6 +96,7 @@ npx electron scripts/verify-m3-grid.cjs        # 宫格、换格、后台保活�
 npx electron scripts/verify-m4-restore.cjs     # 关闭确认、托盘、一键恢复与续接（3 次真实启动）
 npx electron scripts/verify-m5-settings.cjs    # 设置、主题、快捷键、命令面板、终端搜索
 npx electron scripts/verify-upgrade.cjs        # 升级建议：迁移、活动指示、自定义 agent、路径、预设、广播、有更新、崩溃重载
+npx electron scripts/verify-git.cjs            # Git 管理：总开关、改动 / 暂存 / diff / 丢弃 / 提交、分支与远端、历史、工作台
 npm run verify:all                             # 依次跑全部 harness，日志存 %TEMP%\warp-verify\
 ```
 

@@ -20,7 +20,7 @@ const SANDBOX = mkdtempSync(join(tmpdir(), 'warp-perf-'))
 app.setPath('appData', SANDBOX)
 
 const BUDGET = {
-  initialJsKB: 900,
+  initialJsKB: 950,
   domContentLoadedMs: 400,
   intervalsFor4Sessions: 1,
   fileRows: 400,

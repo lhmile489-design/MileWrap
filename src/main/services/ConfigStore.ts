@@ -164,7 +164,13 @@ export function sanitizeSettingsPatch(input: unknown): Partial<Settings> {
   int('activityQuietSec', 2, 120)
   int('dndStart', 0, 23)
   int('dndEnd', 0, 23)
-  for (const k of ['copyOnSelect', 'keepShellOnAgentExit', 'restoreOnStartup', 'resumeConversation', 'notifyIdle', 'notifyExit', 'cursorBlink'] as const) bool(k)
+  for (const k of ['copyOnSelect', 'pasteOnCtrlV', 'keepShellOnAgentExit', 'restoreOnStartup', 'resumeConversation', 'notifyIdle', 'notifyExit', 'cursorBlink', 'gitEnabled'] as const) bool(k)
+  if (r.gitDefaultRemote !== undefined) {
+    // 会拼进 git push 的参数，拒绝以 - 开头（否则被当成选项）
+    const v = r.gitDefaultRemote
+    if (typeof v !== 'string' || v.length > 64 || !/^[A-Za-z0-9._][A-Za-z0-9._-]*$/.test(v)) throw new Error('远端名只能包含字母、数字和 . _ -，且不能以 - 开头')
+    out.gitDefaultRemote = v
+  }
   if (r.lineHeight !== undefined) {
     const v = r.lineHeight
     if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 2) throw new Error('行高应为 1–2')
